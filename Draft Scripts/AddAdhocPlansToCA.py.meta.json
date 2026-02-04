@@ -1,0 +1,10 @@
+{
+  "description": "QA Automation Script to Fetch Plan Type and Submit Plan Details via API",
+  "generationPrompt": "Script Name: AddAdhocPlansToCA\nExcel Columns: croppable_area_id, plan_name, plantype_id, plan_type_name, project_id, varieties, schedule_type, no_of_days, execute_when, reference_date, required_days, status, Response\n\nStep 1 [LOGIC]:\n  - Logic: Loads data from input Excel, fills NaN values, and adds 'status' and 'Response' columns for tracking.\n\nStep 2 [API]:\n  - Step/Variable Name: Fetch Plan Type Details\n  - Call GET /services/farm/api/plan-types/{plantype_id}\n  - Payload Type: QUERY\n  - Payload Example: plantype_id\n  - Expected Response: plantype_response\n  - Instructions: Fetches plan type details using 'plantype_id' from the current Excel row.\n\nStep 3 [API]:\n  - Step/Variable Name: Submit Plan Details\n  - Call POST /services/farm/api/plans/non-pops/ca/{croppable_area_id}\n  - Payload Type: DTO_FILE\n  - Payload Example: [object Object]\n  - Expected Response: post_response\n  - Instructions: Submits new plan details. 'post_payload['croppableAreaId']' from Excel, 'post_payload['data']['information']['planName']' from Excel, 'post_payload['data']['information']['planType']' from GET response, 'post_payload['name']' from Excel, 'post_payload['planTypeId']' from Excel, 'post_payload['planTypeName']' from Excel, 'post_payload['projectId']' from Excel, 'post_payload['schedule']['planParams']' constructed from Excel, 'post_payload['schedule']['type']' from Excel, 'post_payload['schedule']['noOfDays']' from Excel, 'post_payload['schedule']['executeWhen']' from Excel, 'post_payload['schedule']['referenceDate']' from Excel, 'post_payload['schedule']['requiredDays']' from Excel, 'post_payload['varieties'][0]' from Excel.\n\nStep 4 [LOGIC]:\n  - Logic: Updates the Excel row with API status and response, then saves all results to an output Excel file.\n\n",
+  "inputColumns": [],
+  "team": "Unassigned",
+  "groupByColumn": "",
+  "isMultithreaded": true,
+  "batchSize": 10,
+  "mtime": 1769429868551
+}

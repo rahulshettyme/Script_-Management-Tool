@@ -1,0 +1,23 @@
+{
+  "description": "Generates co-ordinates and does area audit for the CAs",
+  "generationPrompt": "Script Name: AreaAuditComplete\nExcel Columns: CAName, ID, Coordinates, audited_area, latitude, longitude, geoinfo, successStatus, Response\n\nStep 1 [LOGIC]:\n  - Logic: Determines processing mode (1: generate coords, 2: use coords, 3: use geo) based on Excel data in columns 3 and 7.\n\nStep 2 [LOGIC]:\n  - Logic: If mode 1, runs 'RS_generate_coordinates.py' as a subprocess to populate missing coordinates in Excel.\n\nStep 3 [LOGIC]:\n  - Logic: If coordinates were generated in mode 1, reloads the Excel workbook to reflect the updates.\n\nStep 4 [API]:\n  - Step/Variable Name: Get Company Area Unit Preference\n  - Call GET /services/user/api/users/user-info\n  - Run Once: Yes (Master Data / Setup Step)\n  - Payload Type: QUERY\n  - Payload Example: N/A\n  - Expected Response: unit_data\n  - Instructions: Extracts company area unit preference: unit_data['companyPreferences']['areaUnits']\n\nStep 5 [LOGIC]:\n  - Logic: Extracts CA ID, name, coordinates (column 3), and geo-information (column 7) from the current Excel row based on detected mode. Converts geo-information to coordinates if needed.\n\nStep 6 [API]:\n  - Step/Variable Name: Calculate Area and Center Coordinates\n  - Call POST /services/utilservice/api/geojson/area\n  - Payload Type: JSON\n  - Payload Example: {'type': 'FeatureCollection', 'features': [{'type': 'Feature', 'properties': {}, 'geometry': {'coordinates': [coords_variable], 'type': 'MultiPolygon'}}]}\n  - Expected Response: geo_data\n  - Instructions: Extracts latitude: geo_data['latitude'], longitude: geo_data['longitude'], auditedArea: geo_data['auditedArea']. [Modifies: unit_data.companyPreferences.areaUnits]\n\nStep 7 [LOGIC]:\n  - Logic: Converts 'auditedArea' from GeoAPI response to HECTARE if company unit preference is HECTARE.\n\nStep 8 [LOGIC]:\n  - Logic: Writes calculated audited area (column 4), latitude (column 5), longitude (column 6), and geo-information (column 7) back to the Excel row.\n\nStep 9 [API]:\n  - Step/Variable Name: Update Croppable Area Audit Information\n  - Call PUT /services/farm/api/croppable-areas/area-audit\n  - Payload Type: JSON\n  - Payload Example: {'id': ca_id_variable, 'cropAudited': true, 'latitude': latitude_variable, 'longitude': longitude_variable, 'auditedArea': {'count': audited_area_variable}, 'usableArea': {'count': audited_area_variable}, 'areaAudit': {'geoInfo': geoinfo_variable, 'latitude': latitude_variable, 'longitude': longitude_variable, 'channel': 'mobile'}}\n  - Expected Response: put_resp\n  - Instructions: Checks API response status code. Updates Excel 'Success/Fail Status' (column 8) and 'API Response Text' (column 9). [Modifies: unit_data.companyPreferences.areaUnits]\n\nStep 10 [LOGIC]:\n  - Logic: Saves the modified Excel workbook to the original file path.\n\n",
+  "inputColumns": [],
+  "team": "Unassigned",
+  "groupByColumn": "",
+  "isMultithreaded": true,
+  "enableGeofencing": false,
+  "batchSize": 10,
+  "outputConfig": {
+    "nameAttribute": "",
+    "nameLogic": "",
+    "codeAttribute": "",
+    "codeLogic": "",
+    "responseAttribute": "",
+    "responseLogic": "",
+    "statusLogic": "",
+    "aiInstructions": "",
+    "excelMapping": [],
+    "isDynamicUI": true
+  },
+  "mtime": 1770014857407
+}

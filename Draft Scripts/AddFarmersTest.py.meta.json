@@ -1,0 +1,32 @@
+{
+  "description": "Script Name: AddFarmersTest\nExcel Columns: first_name, farmerCode, countryCode, mobileNumber, userIds, languagePreference, country, formattedAddress, administrativeAreaLevel1, administrativeAreaLevel2, sublocalityLevel1, postalCode, latitude, longitude, gender, ageRange, registrationDate, gdprConsent, Status, Response, user_response, farmer_response\n\nStep 1 [LOGIC]:\n  - Logic: Loads the specified Excel sheet into a pandas DataFrame for processing.\n\nStep 2 [LOGIC]:\n  - Logic: Ensures 'Status', 'Response', 'user_response', and 'farmer_response' columns exist and are string type.\n\nStep 3 [LOGIC]:\n  - Logic: Processes each row in the DataFrame to create or update farmer records.\n\nStep 4 [LOGIC]:\n  - Logic: Checks if the 'first_name' (row.iloc[0]) is valid; skips row if invalid.\n\nStep 5 [LOGIC]:\n  - Logic: Parses 'userIds' (row.iloc[4]) from comma-separated string; skips row if empty.\n\nStep 6 [API]:\n  - Step/Variable Name: Fetch User Details\n  - Call GET /services/user/api/users/{userId}\n  - Payload Type: QUERY\n  - Payload Example: userId = row.iloc[4] (split by comma)\n  - Expected Response: user_data_list\n  - Instructions: Fetches details for each user ID from 'userIds' and appends to 'user_data_list'.\n\nStep 7 [LOGIC]:\n  - Logic: Constructs the JSON payload for the farmer creation API using data from the current Excel row and fetched user details.\n\nStep 8 [API]:\n  - Step/Variable Name: Create Farmer\n  - Call POST /services/farm/api/farmers\n  - Payload Type: DTO_FILE\n  - Payload Example: [object Object]\n  - Expected Response: farmer_response\n  - Instructions: Sends a POST request to create a new farmer record with the prepared payload.\n\nStep 9 [LOGIC]:\n  - Logic: Updates 'Status', 'Response', 'user_response', and 'farmer_response' columns in the DataFrame based on API call outcomes.\n\nStep 10 [LOGIC]:\n  - Logic: Saves the updated DataFrame back to the original Excel file, with retry logic for file access errors.\n\n",
+  "inputColumns": [
+    "first_name",
+    "farmerCode",
+    "countryCode",
+    "mobileNumber",
+    "userIds",
+    "languagePreference",
+    "country",
+    "formattedAddress",
+    "administrativeAreaLevel1",
+    "administrativeAreaLevel2",
+    "sublocalityLevel1",
+    "postalCode",
+    "latitude",
+    "longitude",
+    "gender",
+    "ageRange",
+    "registrationDate",
+    "gdprConsent",
+    "Status",
+    "Response",
+    "user_response",
+    "farmer_response"
+  ],
+  "team": "Unassigned",
+  "groupByColumn": "",
+  "isMultithreaded": true,
+  "batchSize": 10,
+  "mtime": 1769059839929
+}

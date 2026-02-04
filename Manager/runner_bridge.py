@@ -25,7 +25,34 @@ def run_script(target_script, data, token, env_config_json):
         # 1. Parse Inputs
         # data is already a list/dict passed from main
         env_config = json.loads(env_config_json)
-        env_config = json.loads(env_config_json)
+        
+        
+        # Inject Google API Key for Geofencing (FORCE OVERWRITE to ensure correct key is used)
+        # 1. Try Environment Variables (Prioritize Specific Key)
+        key = os.environ.get("GEOCODING_API_KEY", "").strip() or \
+              os.environ.get("GOOGLE_API_KEY", "").strip()
+
+        if not key:
+            try:
+                # 2. Try secrets.json / db.json (Local Development)
+                # runner_bridge is in Manager/
+                base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) 
+                for filename in ["System/secrets.json", "System/db.json"]:
+                    path = os.path.join(base_dir, filename)
+                    if os.path.exists(path):
+                        with open(path, 'r', encoding='utf-8') as f:
+                            # Start with specific key overrides if they exist, else fallback to generic gemini key
+                            data_json = json.load(f)
+                            # PRIORITY: Use Geocoding_api_key for Runner/Scripts if available
+                            key = data_json.get("Geocoding_api_key", "").strip() or \
+                                  data_json.get("google_api_key", "").strip() or \
+                                  data_json.get("gemini_api_key", "").strip()
+                            if key: break
+            except: pass
+        
+        # Only overwrite if we actually found a key, otherwise leave what might vary be there
+        if key:
+            env_config['google_api_key'] = key
         
         # 2. Load User Script
         script_dir = os.path.dirname(target_script)
@@ -92,19 +119,10 @@ def run_script(target_script, data, token, env_config_json):
                     import pandas as pd
                     df_out = pd.DataFrame(results)
                     
-                    # REORDER COLUMNS if 'output_columns' is provided
-                    if hasattr(builtins, 'output_columns') and builtins.output_columns:
-                        # 1. Get ordered list from config
-                        ordered = [c.strip() for c in builtins.output_columns if c.strip() in df_out.columns]
-                        # 2. Get remaining columns (that were not in config)
-                        existing_cols = list(df_out.columns)
-                        remaining = [c for c in existing_cols if c not in ordered]
-                        # 3. Combine
-                        final_order = ordered + remaining
-                        # 4. Reindex (handling output)
-                        if final_order:
-                            df_out = df_out[final_order]
-                            print(f"DEBUG: Reordered Output Columns: {final_order[:5]}...")
+                    # NO REORDERING - Return exact output from script
+                    # This allows new columns (e.g. results) to appear naturally.
+                    # if hasattr(builtins, 'output_columns') and builtins.output_columns: ... (Removed)
+
 
                     print("\n[OUTPUT_DATA_DUMP]")
                     print(df_out.to_json(orient='records', date_format='iso'))

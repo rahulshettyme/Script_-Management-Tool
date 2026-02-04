@@ -1,0 +1,10 @@
+{
+  "description": "Scrip to Delete PR data and Stop PR processing of plots",
+  "generationPrompt": "Script Name: PR_Disable\nExcel Columns: id, name, deletion response, deletion status, request id\n\nStep 1 [API]:\n  - Step/Variable Name: Send Plot Deletion Request\n  - Call POST /services/farm/api/intelligence/croppable-areas/request\n  - Payload Type: JSON\n  - Payload Example: [df_in['id']]\n  - Expected Response: df_in['deletion response'], df_in['request id']\n  - Instructions: Sends POST for each `df_in['id']` (JSON array). Updates `df_in['deletion response']` and `df_in['request id']`.\n\nStep 2 [API]:\n  - Step/Variable Name: Check Plot Deletion Status\n  - Call GET /services/farm/api/intelligence/croppable-areas/request/status\n  - Payload Type: QUERY\n  - Payload Example: requestId = df_in['request id'] (or df_in['id'] for fallback)\n  - Expected Response: df_in['deletion status']\n  - Instructions: Waits, then sends GET for each `df_in['request id']` (or `df_in['id']` fallback). Updates `df_in['deletion status']`.\n\nStep 3 [LOGIC]:\n  - Logic: Saves the updated DataFrame back to the 'Plot_details' sheet in the Excel file, replacing the sheet.\n\n",
+  "inputColumns": [],
+  "team": "Both",
+  "groupByColumn": "",
+  "isMultithreaded": true,
+  "batchSize": 10,
+  "mtime": 1769853515450
+}

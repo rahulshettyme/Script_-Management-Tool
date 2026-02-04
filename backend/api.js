@@ -22,8 +22,25 @@ const readDb = () => {
 };
 
 // Initialize API Key from DB or Environment
+const SECRETS_FILE = path.join(__dirname, '..', 'System', 'secrets.json');
+
+// Helper to read Secrets
+const readSecrets = () => {
+    try {
+        if (fs.existsSync(SECRETS_FILE)) {
+            const data = fs.readFileSync(SECRETS_FILE, 'utf8');
+            return JSON.parse(data);
+        }
+    } catch (err) {
+        console.error('Error reading secrets:', err);
+    }
+    return {};
+};
+
+// Initialize API Key from Environment > Secrets File > DB File (Legacy)
 const dbData = readDb();
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || dbData.gemini_api_key || "";
+const secretsData = readSecrets();
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || secretsData.gemini_api_key || dbData.gemini_api_key || "";
 
 
 // Helper to write DB
@@ -782,7 +799,11 @@ module.exports = function (app) {
             ];
 
             const runner = spawn('python', ['-u', ...args], {
-                env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+                env: {
+                    ...process.env,
+                    PYTHONIOENCODING: 'utf-8',
+                    GOOGLE_API_KEY: GOOGLE_API_KEY
+                }
             });
 
             let stdoutData = '';
@@ -895,7 +916,8 @@ module.exports = function (app) {
                 // Add components folder to PYTHONPATH so scripts can import from it
                 PYTHONPATH: process.env.PYTHONPATH
                     ? process.env.PYTHONPATH + path.delimiter + path.join(__dirname, '..', 'components')
-                    : path.join(__dirname, '..', 'components')
+                    : path.join(__dirname, '..', 'components'),
+                GOOGLE_API_KEY: GOOGLE_API_KEY
             }
         });
 
@@ -1128,7 +1150,7 @@ module.exports = function (app) {
 
     // Generate Script Template
     app.post('/api/scripts/generate', (req, res) => {
-        const { description, existing_code, scriptName, inputColumns, isMultithreaded } = req.body;
+        const { description, existing_code, scriptName, inputColumns, isMultithreaded, outputConfig } = req.body;
         if (!description) return res.status(400).json({ error: 'Missing description' });
 
         const generatorPath = path.join(__dirname, '..', 'Manager', 'script_generator.py');
@@ -1139,7 +1161,7 @@ module.exports = function (app) {
         let stdoutData = '';
         pythonProcess.stdout.on('data', d => stdoutData += d.toString());
         // Pass everything needed for update logic
-        pythonProcess.stdin.write(JSON.stringify({ description, existing_code, scriptName, inputColumns, isMultithreaded }));
+        pythonProcess.stdin.write(JSON.stringify({ description, existing_code, scriptName, inputColumns, isMultithreaded, outputConfig }));
         pythonProcess.stdin.end();
 
         pythonProcess.on('close', code => {
@@ -1181,12 +1203,12 @@ module.exports = function (app) {
 
     // Update Metadata (Team Assignment / Reusable)
     app.post('/api/scripts/update-meta', (req, res) => {
-        const { filename, team, isReusable } = req.body;
+        const { filename, team, isReusable, description } = req.body;
 
         if (!filename) return res.status(400).json({ error: 'Missing filename' });
         // At least one field to update
-        if (team === undefined && isReusable === undefined) {
-            return res.status(400).json({ error: 'Nothing to update (team or isReusable)' });
+        if (team === undefined && isReusable === undefined && description === undefined) {
+            return res.status(400).json({ error: 'Nothing to update' });
         }
 
         try {
@@ -1198,6 +1220,7 @@ module.exports = function (app) {
 
             if (team !== undefined) entry.team = team;
             if (isReusable !== undefined) entry.isReusable = isReusable;
+            if (description !== undefined) entry.description = description;
 
             fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2));
 
@@ -1209,6 +1232,7 @@ module.exports = function (app) {
                     if (team !== undefined) config.team = team;
                     // Configs might not use isReusable, but we can add it safely
                     if (isReusable !== undefined) config.isReusable = isReusable;
+                    if (description !== undefined) config.description = description;
 
                     fs.writeFileSync(configPath, JSON.stringify(config, null, 4));
                 }
@@ -1268,7 +1292,7 @@ module.exports = function (app) {
 
         // Spawn Python Analyzer
         const pythonProcess = spawn('python', [analyzerPath], {
-            env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+            env: { ...process.env, PYTHONIOENCODING: 'utf-8', GOOGLE_API_KEY: GOOGLE_API_KEY }
         });
 
         let stdoutData = '';
@@ -1373,7 +1397,13 @@ module.exports = function (app) {
             "--columns", JSON.stringify(columns || [])
         ];
 
-        const pythonProcess = spawn('python', args, { env: { ...process.env, PYTHONIOENCODING: 'utf-8' } });
+        const pythonProcess = spawn('python', args, {
+            env: {
+                ...process.env,
+                PYTHONIOENCODING: 'utf-8',
+                GOOGLE_API_KEY: GOOGLE_API_KEY
+            }
+        });
 
 
 
@@ -1388,12 +1418,20 @@ module.exports = function (app) {
             try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (e) { }
 
             if (code !== 0) {
-                return res.status(500).json({
-                    error: 'Execution failed',
-                    details: stderrData,
-                    logs: stdoutData,
-                    convertedCode: cleanedCode // DEBUG: Show even on error
-                });
+                // PARTIAL SUCCESS CHECK:
+                // If the script crashed/failed but still managed to print [OUTPUT_DATA_DUMP], 
+                // we should allow the user to download the partial result.
+                if (stdoutData.includes('[OUTPUT_DATA_DUMP]')) {
+                    console.log('[Test Run] Script failed but Output Dump detected. Returning Partial Success.');
+                    // Proceed to parsing logic below instead of returning 500
+                } else {
+                    return res.status(500).json({
+                        error: 'Execution failed',
+                        details: stderrData,
+                        logs: stdoutData,
+                        convertedCode: cleanedCode
+                    });
+                }
             }
 
             try {
@@ -1603,7 +1641,9 @@ module.exports = function (app) {
                 requiresLogin: true,
                 isMultithreaded: finalIsMultithreaded,
                 batchSize: finalBatchSize,
-                groupByColumn: finalGroupBy
+                groupByColumn: finalGroupBy,
+                enableGeofencing: req.body.enableGeofencing || false,
+                outputConfig: req.body.outputConfig || {}
             };
 
             fs.writeFileSync(path.join(configsDir, jsonFilename), JSON.stringify(config, null, 4), 'utf8');
@@ -1845,15 +1885,18 @@ module.exports = function (app) {
             fs.writeFileSync(draftPath, code, 'utf8');
 
             // Save Metadata Sidecar
-            const { description, inputColumns, team, groupByColumn, isMultithreaded, batchSize } = req.body;
+            const { description, generationPrompt, inputColumns, team, groupByColumn, isMultithreaded, batchSize, outputConfig } = req.body;
             const metaPath = path.join(draftsDir, filename + '.meta.json');
             const meta = {
                 description: description || "",
+                generationPrompt: generationPrompt || description || "", // Fallback for legacy
                 inputColumns: inputColumns || [],
                 team: team || "Unassigned",
                 groupByColumn: groupByColumn,
                 isMultithreaded: isMultithreaded,
+                enableGeofencing: req.body.enableGeofencing || false,
                 batchSize: batchSize || 10,
+                outputConfig: outputConfig || {},
                 mtime: Date.now()
             };
             fs.writeFileSync(metaPath, JSON.stringify(meta, null, 2), 'utf8');
@@ -1941,18 +1984,23 @@ module.exports = function (app) {
             }
 
             // OVERRIDE: Extract Config from Code Content (Truth Source)
+            // Only if NOT present in metadata (Preserve User UI Choice)
             const groupMatch = content.match(/#\s*CONFIG:\s*groupByColumn\s*=\s*["']([^"']+)["']/);
-            if (groupMatch && groupMatch[1]) meta.groupByColumn = groupMatch[1];
+            if (!meta.groupByColumn && groupMatch && groupMatch[1]) meta.groupByColumn = groupMatch[1];
 
             const batchMatch = content.match(/#\s*CONFIG:\s*batchSize\s*=\s*(\d+)/);
-            if (batchMatch && batchMatch[1]) meta.batchSize = parseInt(batchMatch[1]);
+            if (!meta.batchSize && batchMatch && batchMatch[1]) meta.batchSize = parseInt(batchMatch[1]);
 
             const mtMatch = content.match(/#\s*CONFIG:\s*isMultithreaded\s*=\s*(True|False|true|false)/i);
-            if (mtMatch && mtMatch[1]) meta.isMultithreaded = (mtMatch[1].toLowerCase() === 'true');
+            // Explicit check for undefined because false is a valid value
+            if (meta.isMultithreaded === undefined && mtMatch && mtMatch[1]) {
+                meta.isMultithreaded = (mtMatch[1].toLowerCase() === 'true');
+            }
 
             res.json({
                 content: content,
-                generationPrompt: meta.description || "",
+                generationPrompt: meta.generationPrompt || meta.description || "",
+                description: meta.description || "",
                 inputColumns: meta.inputColumns || [],
                 meta: meta
             });

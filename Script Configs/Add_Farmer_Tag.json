@@ -1,28 +1,70 @@
 {
-    "name": "Add Farmer Tag.py",
+    "name": "Add_Farmer_Tag.py",
     "filename": "Add_Farmer_Tag.py",
-    "team": "QA",
-    "description": "Adds a tag to a farmer.",
+    "team": "Both",
+    "description": "Add tags to farmers. \nNote: This script will update tag in excel to existing tags. It wont delete the existing tag.",
     "expected_columns": [
-        "Farmer ID",
-        "Tag Name"
+        "Tag ID",
+        "Response"
     ],
     "columns": [
         {
-            "name": "Farmer ID",
-            "type": "Optional",
-            "description": "Farmer ID (or use Code)"
-        },
-        {
-            "name": "Farmer Code",
-            "type": "Optional",
-            "description": "Farmer Code (if ID not known)"
-        },
-        {
-            "name": "Tag Name",
+            "name": "Tag ID",
             "type": "Mandatory",
-            "description": "Name of Tag to add"
+            "description": "Auto-detected"
+        },
+        {
+            "name": "Response",
+            "type": "Mandatory",
+            "description": "Auto-detected"
         }
     ],
-    "requiresLogin": true
+    "requiresLogin": true,
+    "isMultithreaded": true,
+    "batchSize": "10",
+    "groupByColumn": "",
+    "enableGeofencing": false,
+    "outputConfig": {
+        "uiMapping": [
+            {
+                "colName": "Farmer Name",
+                "value": "",
+                "logic": "from excel"
+            },
+            {
+                "colName": "Farmer ID",
+                "value": "",
+                "logic": "from excel"
+            },
+            {
+                "colName": "Tag Name",
+                "value": "",
+                "logic": "from excel"
+            },
+            {
+                "colName": "Status",
+                "value": "",
+                "logic": "Pass if farmer update API status code is 200, else Fail"
+            }
+        ],
+        "aiInstructions": "",
+        "excelMapping": [
+            {
+                "colName": "Tag ID",
+                "value": "",
+                "logic": "attribute 'id' from tag API response"
+            },
+            {
+                "colName": "Status",
+                "value": "",
+                "logic": "'Fail' if tag not found or if status code of farmer update is not 200\n'Pass' if status of farmer update is 200"
+            },
+            {
+                "colName": "Response",
+                "value": "",
+                "logic": "'Tag not found' if tag not found or \nwhole response of farmer update if status code is not 200\n'Tag updated to farmer' if farmer update response code is 200"
+            }
+        ],
+        "isDynamicUI": true
+    }
 }

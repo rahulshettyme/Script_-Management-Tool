@@ -1,0 +1,36 @@
+---
+description: Logic and Workflow for Onboarding Data Generation Scripts
+---
+# Script Onboarding Agent & Logic Definition
+
+This document defines the workflow and logic for onboarding and executing custom Python data generation scripts.
+
+## 1. Script Intake Logic
+- **Source**: User provides a `.py` script via File Upload or Copy-Paste.
+- **Validation Assumption**: The script is pre-tested and confirmed working by the user (PyCharm/Local). No server-side syntax validation is required at this stage.
+
+## 2. Token & Credential Logic
+- **Execution Context**: Scripts are executed within the authenticated session of the "Create bulk data" screen.
+- **Token Source**: The system must extract the active `authToken` (generated during the login step in the UI) and pass it to the script.
+- **Usage**: The script uses this token to authenticate API calls (e.g., getting project details, creating assets).
+
+## 3. Script Execution Logic
+- **Purpose**: The script's sole purpose is to encapsulate the *business logic* of data generation:
+    1.  **Read Data**: Parse input (e.g., rows from an uploaded Excel file passed as JSON arguments).
+    2.  **API Interaction**: Hit relevant API endpoints using the provided token.
+    3.  **Result Generation**: Return processed data/results (which can be written back to Excel for user download).
+- **Isolation**: Each script runs as an independent process (via `runner_bridge.py`).
+
+## 4. File Persistence
+- **Original Script**: The uploaded `.py` file is saved to:
+    `Data generate/Original Scripts/<script_name>.py`
+- **Purpose**: Future reference, debugging, or versioning.
+
+## 5. UI Compatibility (The "Wrapper")
+- **Definition**: For every script, a corresponding UI Configuration (JSON) is created.
+- **Path**: `Data generate/Converted Scripts/<script_name>.json`
+- **Function**: This JSON defines how the script appears in the "Select Script" dropdown and what input columns it expects (linking the UI form to the script arguments).
+
+## References
+- **Execution Reference**: See `Create Farmer` (logic-wise) for how data flows from UI -> API.
+- **Bridge**: `runner_bridge.py` handles the invocation of these stored scripts.

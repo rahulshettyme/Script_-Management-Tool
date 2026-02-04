@@ -1,23 +1,35 @@
 {
     "name": "AddCropStagetoVariety.py",
     "filename": "AddCropStagetoVariety.py",
-    "team": "QA",
-    "description": "User Script",
+    "team": "CS",
+    "description": "Script to add or update variety to existing varieties. Note: This will not delete existing crop stages, it will only updated values and adds new if not existed before",
     "expected_columns": [
-        "name",
+        "Varietyname",
         "varietyID",
+        "cropName",
+        "cropId",
         "cropStagename",
         "cropStagedaysAfterSowing",
         "cropstagedata"
     ],
     "columns": [
         {
-            "name": "name",
+            "name": "Varietyname",
             "type": "Mandatory",
             "description": "Auto-detected"
         },
         {
             "name": "varietyID",
+            "type": "Mandatory",
+            "description": "Auto-detected"
+        },
+        {
+            "name": "cropName",
+            "type": "Mandatory",
+            "description": "Auto-detected"
+        },
+        {
+            "name": "cropId",
             "type": "Mandatory",
             "description": "Auto-detected"
         },
@@ -37,5 +49,8 @@
             "description": "Auto-detected"
         }
     ],
-    "requiresLogin": true
+    "requiresLogin": true,
+    "isMultithreaded": true,
+    "batchSize": 1,
+    "groupByColumn": "varietyID"
 }

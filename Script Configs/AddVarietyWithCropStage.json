@@ -1,7 +1,7 @@
 {
     "name": "AddVarietyWithCropStage.py",
     "filename": "AddVarietyWithCropStage.py",
-    "team": "Both",
+    "team": "CS",
     "description": "User Script",
     "expected_columns": [
         "name",

@@ -1,3 +1,6 @@
+# EXPECTED_INPUT_COLUMNS: id, name, deletion response, deletion status, request id
+
+# AI Updated Script - 2026-01-31 14:51:35 IST
 # ======================================================
 # 📘 RS_stop_pr.py
 # Author: Rahul Shetty (Standard Format)
@@ -10,9 +13,7 @@
 #   - Update Excel (replace sheet)
 #   - Execution time tracking
 # ======================================================
-
 # 🔧 Imports
-import concurrent.futures
 import os
 import time
 import argparse
@@ -21,128 +22,6 @@ import requests
 import pandas as pd
 from openpyxl import load_workbook
 from RS_access_token_generate import get_bearer_token
-
-# ==============================
-# 🔁 PHASE 1: Send deletes for all rows (Threaded)
-# ==============================
-def phase1_send_deletes(df_in, headers, delete_api=DELETE_PLOT_API, per_call_sleep=0.4):
-    print("===========================================")
-    print("🔁 PHASE 1: Sending DELETE request for all rows (Threaded)")
-    print("===========================================")
-
-    def process_row(idx, row):
-        plot_id = row.get("id", "")
-        if pd.isna(plot_id) or str(plot_id).strip() == "":
-            print(f"⚠️ Row {idx+1}: Empty ID → skipping")
-            return idx, "Skipped: empty id", "Skipped", ""
-
-        print(f"🧭 Row {idx+1}: Sending delete for Plot ID {plot_id}")
-        try:
-            # Sleep slightly to avoid instant burst if needed, but in threaded mode standard is usually fine
-            # time.sleep(per_call_sleep) 
-            resp = requests.post(delete_api, json=[plot_id], headers=headers, timeout=60)
-        except Exception as e:
-            print(f"    ❌ Exception for Row {idx+1}: {e}")
-            return idx, f"Exception: {e}", "Delete Failed", ""
-
-        if resp.status_code == 200:
-            try:
-                resp_json = resp.json()
-            except Exception:
-                resp_json = resp.text
-
-            req_id = ""
-            if isinstance(resp_json, dict):
-                req_id = resp_json.get("id") or resp_json.get("requestId") or resp_json.get("request_id") or ""
-                if not req_id:
-                    for v in resp_json.values():
-                        if isinstance(v, dict):
-                            req_id = v.get("id") or v.get("requestId") or ""
-                            if req_id: break
-            elif isinstance(resp_json, list) and len(resp_json) > 0 and isinstance(resp_json[0], dict):
-                req_id = resp_json[0].get("id") or resp_json[0].get("requestId") or ""
-
-            print(f"    ✔️ Row {idx+1}: Delete queued. Request Id: {req_id or 'N/A'}")
-            return idx, str(resp_json), "Delete Queued", req_id or ""
-        else:
-            print(f"    ❌ Row {idx+1}: Delete failed (HTTP {resp.status_code})")
-            return idx, f"Error {resp.status_code}: {resp.text}", "Delete Failed", ""
-
-    # Execute
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(process_row, idx, row) for idx, row in df_in.iterrows()]
-        for future in concurrent.futures.as_completed(futures):
-            idx, d_resp, d_status, r_id = future.result()
-            df_in.at[idx, "deletion response"] = d_resp
-            df_in.at[idx, "deletion status"] = d_status
-            df_in.at[idx, "request id"] = r_id
-            
-    return df_in
-
-# ==============================
-# 🔁 PHASE 2: Check status (Threaded)
-# ==============================
-def phase2_check_status(df_in, headers, status_api_template=STATUS_CHECK_API, post_delete_pause=8, per_status_sleep=0.4, max_status_attempts=3):
-    print(f"\n⏳ Waiting {post_delete_pause}s before status checks...")
-    time.sleep(post_delete_pause)
-
-    print("===========================================")
-    print("🔁 PHASE 2: Checking STATUS for all rows (Threaded)")
-    print("===========================================")
-
-    def process_status(idx, row):
-        plot_id = row.get("id", "")
-        req_id = row.get("request id", "")
-
-        if pd.isna(plot_id) or str(plot_id).strip() == "":
-            return idx, None # No update
-
-        if not req_id or str(req_id).strip() == "":
-            # Fallback check
-            current_resp = str(row.get("deletion response", ""))
-            if "Error" in current_resp or "Exception" in current_resp or "Skipped" in current_resp:
-                return idx, None # Already failed/skipped
-            
-            try:
-                print(f"🔎 Row {idx+1}: Attempting fallback status check (Plot {plot_id})")
-                fallback_resp = requests.get(status_api_template.format(plot_id), headers=headers, timeout=40)
-                if fallback_resp.status_code == 200:
-                    try: return idx, str(fallback_resp.json())
-                    except: return idx, fallback_resp.text
-                else:
-                    return idx, f"No request id; fallback error {fallback_resp.status_code}"
-            except Exception as e:
-                return idx, f"No request id; fallback exception: {e}"
-        
-        # Checking Request ID
-        final_status = None
-        for attempt in range(1, max_status_attempts + 1):
-            try:
-                status_resp = requests.get(status_api_template.format(req_id), headers=headers, timeout=60)
-                if status_resp.status_code == 200:
-                    try: final_status = str(status_resp.json())
-                    except: final_status = status_resp.text
-                    print(f"    🔄 Row {idx+1}: Status retrieved")
-                    break
-                else:
-                    print(f"    ⚠️ Row {idx+1}: Status attempt {attempt} failed ({status_resp.status_code})")
-            except Exception as e:
-                print(f"    ❌ Row {idx+1}: Exception check status: {e}")
-            
-            if attempt < max_status_attempts:
-                time.sleep(1) # wait between retries
-        
-        return idx, (final_status or "No status returned")
-
-    # Execute
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [executor.submit(process_status, idx, row) for idx, row in df_in.iterrows()]
-        for future in concurrent.futures.as_completed(futures):
-            idx, status_val = future.result()
-            if status_val is not None:
-                df_in.at[idx, "deletion status"] = status_val
-
-    return df_in
 
 # ==============================
 # 📄 File paths & settings (STANDARD FORMAT)
@@ -196,7 +75,10 @@ if not env_url:
 env_url = env_url.rstrip('/')
 print(f"🌍 Using Base URL: {env_url}")
 
+# Step 1 API Path Definition: POST /services/farm/api/intelligence/croppable-areas/request
 DELETE_PLOT_API = f"{env_url}/services/farm/api/intelligence/croppable-areas/request"
+
+# Step 2 API Path Definition: GET /services/farm/api/intelligence/croppable-areas/request/status
 STATUS_CHECK_API = f"{env_url}/services/farm/api/intelligence/croppable-areas/request/status?requestId={{}}"
 
 # ==============================
@@ -210,6 +92,7 @@ print("Columns in Excel:", df.columns.tolist())
 print("First few rows:\n", df.head())
 
 # Ensure status/response/request id columns exist and are string dtype
+# Required Columns: id, name, deletion response, deletion status, request id
 for col in ["deletion response", "deletion status", "request id"]:
     if col not in df.columns:
         df[col] = ""
@@ -224,6 +107,7 @@ if "id" not in df.columns:
 # 💾 Save DataFrame back to Excel (with retries & backup)
 # ==============================
 def save_df_to_excel(df_to_save, file_path, sheet_name=sheet_name, max_retries=3):
+    # Step 3 [LOGIC]: Saves the updated DataFrame back to the 'Plot_details' sheet, replacing the sheet.
     attempt = 0
     while attempt < max_retries:
         try:
@@ -261,6 +145,7 @@ def save_df_to_excel(df_to_save, file_path, sheet_name=sheet_name, max_retries=3
 
 # ==============================
 # 🔁 PHASE 1: Send deletes for all rows (collect request ids)
+# Step 1: Send Plot Deletion Request
 # ==============================
 def phase1_send_deletes(df_in, headers, delete_api=DELETE_PLOT_API, per_call_sleep=0.4):
     print("===========================================")
@@ -278,6 +163,7 @@ def phase1_send_deletes(df_in, headers, delete_api=DELETE_PLOT_API, per_call_sle
 
         print(f"🧭 Row {idx+1}: Sending delete for Plot ID {plot_id}")
         try:
+            # API Call: POST /services/farm/api/intelligence/croppable-areas/request, Payload: [df_in['id']]
             resp = requests.post(delete_api, json=[plot_id], headers=headers, timeout=60)
         except Exception as e:
             df_in.at[idx, "deletion response"] = f"Exception: {e}"
@@ -293,9 +179,10 @@ def phase1_send_deletes(df_in, headers, delete_api=DELETE_PLOT_API, per_call_sle
             except Exception:
                 resp_json = resp.text
 
+            # Expected Response: df_in['deletion response']
             df_in.at[idx, "deletion response"] = str(resp_json)
 
-            # attempt to extract request id from common keys
+            # attempt to extract request id (Preserve complex extraction logic)
             req_id = ""
             if isinstance(resp_json, dict):
                 req_id = resp_json.get("id") or resp_json.get("requestId") or resp_json.get("request_id") or ""
@@ -309,6 +196,7 @@ def phase1_send_deletes(df_in, headers, delete_api=DELETE_PLOT_API, per_call_sle
             elif isinstance(resp_json, list) and len(resp_json) > 0 and isinstance(resp_json[0], dict):
                 req_id = resp_json[0].get("id") or resp_json[0].get("requestId") or ""
 
+            # Expected Response: df_in['request id']
             df_in.at[idx, "request id"] = req_id or ""
             print(f"    ✔️ Delete queued. Request Id: {req_id or 'N/A'}")
         else:
@@ -323,6 +211,7 @@ def phase1_send_deletes(df_in, headers, delete_api=DELETE_PLOT_API, per_call_sle
 
 # ==============================
 # 🔁 PHASE 2: Check status for all collected request ids
+# Step 2: Check Plot Deletion Status
 # ==============================
 def phase2_check_status(df_in, headers, status_api_template=STATUS_CHECK_API, post_delete_pause=8, per_status_sleep=0.4, max_status_attempts=1):
     print("\n⏳ Waiting fixed period before status checks...")
@@ -340,7 +229,7 @@ def phase2_check_status(df_in, headers, status_api_template=STATUS_CHECK_API, po
             continue  # skipped in phase1
 
         if not req_id or str(req_id).strip() == "":
-            # no request id captured; attempt fallback status using plot id (best-effort)
+            # Fallback handling: Payload Example: df_in['id'] for fallback
             current_resp = str(row.get("deletion response", ""))
             if "Error" in current_resp or "Exception" in current_resp:
                 df_in.at[idx, "deletion status"] = "Delete failed - no request id"
@@ -348,12 +237,14 @@ def phase2_check_status(df_in, headers, status_api_template=STATUS_CHECK_API, po
             else:
                 try:
                     print(f"🔎 Row {idx+1}: No request id; attempting fallback status check using Plot ID {plot_id}")
+                    # API Call: GET /services/farm/api/intelligence/croppable-areas/request/status?requestId={plot_id}
                     fallback_resp = requests.get(status_api_template.format(plot_id), headers=headers, timeout=40)
                     if fallback_resp.status_code == 200:
                         try:
                             fallback_json = fallback_resp.json()
                         except Exception:
                             fallback_json = fallback_resp.text
+                        # Expected Response: df_in['deletion status']
                         df_in.at[idx, "deletion status"] = str(fallback_json)
                         print(f"    🔄 Fallback status returned")
                     else:
@@ -365,10 +256,11 @@ def phase2_check_status(df_in, headers, status_api_template=STATUS_CHECK_API, po
             time.sleep(per_status_sleep)
             continue
 
-        # we have request id -> perform status check (with simple attempts)
+        # Primary handling: Payload Example: requestId = df_in['request id']
         status_value = None
         for attempt in range(1, max_status_attempts + 1):
             try:
+                # API Call: GET /services/farm/api/intelligence/croppable-areas/request/status?requestId={req_id}
                 status_resp = requests.get(status_api_template.format(req_id), headers=headers, timeout=60)
             except Exception as e:
                 status_value = f"Exception: {e}"
@@ -389,6 +281,7 @@ def phase2_check_status(df_in, headers, status_api_template=STATUS_CHECK_API, po
                 if attempt < max_status_attempts:
                     time.sleep(per_status_sleep)
 
+        # Expected Response: df_in['deletion status']
         df_in.at[idx, "deletion status"] = status_value or "No status returned"
         time.sleep(per_status_sleep)
 
@@ -407,7 +300,7 @@ def main():
     # Phase 2: status checks
     updated_df = phase2_check_status(updated_df, headers, status_api_template=STATUS_CHECK_API, post_delete_pause=8, per_status_sleep=0.4, max_status_attempts=1)
 
-    # Save results back to Excel
+    # Save results back to Excel (Step 3)
     # Ensure we write columns names lowercased (consistent with standard)
     updated_df.columns = [c.strip().lower() for c in updated_df.columns]
     saved = save_df_to_excel(updated_df, file_path, sheet_name)
@@ -455,6 +348,8 @@ if __name__ == "__main__":
         if not env_url:
             raise RuntimeError("❌ Base URL for environment not found in Environment_Details sheet")
         env_url = env_url.rstrip('/')
+        
+        # Re-define APIs based on new environment URL
         DELETE_PLOT_API = f"{env_url}/services/farm/api/intelligence/croppable-areas/request"
         STATUS_CHECK_API = f"{env_url}/services/farm/api/intelligence/croppable-areas/request/status?requestId={{}}"
 

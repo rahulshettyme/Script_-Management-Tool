@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Generation Hub</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #e2e8f0;
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+
+        /* 1. Header (Top Row) */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 1.5rem;
+            width: 100%;
+        }
+
+        .header-left h1 {
+            color: #f8fafc;
+            margin: 0;
+            font-size: 2rem;
+            letter-spacing: -0.025em;
+        }
+
+        .header-left .sub-header {
+            color: #94a3b8;
+            font-size: 1rem;
+            margin-top: 0.25rem;
+            display: block;
+        }
+
+        .header-right {
+            display: flex;
+            gap: 1rem;
+        }
+
+        /* Buttons */
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+            font-size: 0.95rem;
+            transition: all 0.2s;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+
+        .btn-success {
+            background: #10b981;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
+        .btn-execute {
+            background: #0ea5e9;
+        }
+
+        .btn-execute:hover {
+            background: #0284c7;
+        }
+
+        /* 2. Stats Row (Horizontal) */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            /* 4 Columns Fixed */
+            gap: 1.5rem;
+            width: 100%;
+        }
+
+        .stat-card {
+            background: #1e293b;
+            padding: 1.5rem;
+            border-radius: 12px;
+            border: 1px solid #334155;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #38bdf8;
+            line-height: 1.2;
+        }
+
+        .stat-label {
+            color: #94a3b8;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.05em;
+            font-weight: 600;
+            margin-top: 0.5rem;
+        }
+
+        /* 3. Filter Row */
+        .action-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #1e293b;
+            padding: 1rem;
+            border-radius: 8px;
+            border: 1px solid #334155;
+        }
+
+        .search-input {
+            width: 300px;
+            padding: 10px 16px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            color: white;
+            font-size: 0.9rem;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #38bdf8;
+        }
+
+        .team-select {
+            background: #0f172a;
+            color: white;
+            border: 1px solid #334155;
+            padding: 8px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            outline: none;
+            font-size: 0.9rem;
+        }
+
+        /* 4. Table */
+        .table-container {
+            background: #1e293b;
+            border-radius: 12px;
+            border: 1px solid #334155;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+        }
+
+        th {
+            background: #0f172a;
+            color: #94a3b8;
+            font-weight: 600;
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #334155;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        td {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #334155;
+            color: #e2e8f0;
+            vertical-align: middle;
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: #2a3850;
+            /* Slightly lighter on hover */
+        }
+
+        /* Badges */
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 9999px;
+            /* Pill */
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-active {
+            background: rgba(16, 185, 129, 0.1);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .status-draft {
+            background: rgba(234, 179, 8, 0.1);
+            color: #facc15;
+            border: 1px solid rgba(234, 179, 8, 0.2);
+        }
+
+        /* Edit Button */
+        .action-btn {
+            background: transparent;
+            border: 1px solid #334155;
+            cursor: pointer;
+            color: #94a3b8;
+            font-size: 1rem;
+            padding: 6px 10px;
+            border-radius: 6px;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .action-btn:hover {
+            color: #38bdf8;
+            border-color: #38bdf8;
+            background: rgba(56, 189, 248, 0.1);
+        }
+
+        /* Pagination */
+        .pagination {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            padding: 1rem;
+            background: #1e293b;
+            border-top: 1px solid #334155;
+            gap: 1rem;
+        }
+
+        .page-btn {
+            background: #0f172a;
+            border: 1px solid #334155;
+            color: #e2e8f0;
+            padding: 6px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .page-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .page-info {
+            color: #94a3b8;
+            font-size: 0.9rem;
+        }
+
+        /* Save Indicator */
+        .save-indicator {
+            display: inline-block;
+            margin-left: 8px;
+            font-size: 0.85rem;
+            transition: opacity 0.3s;
+        }
+
+        .save-success {
+            color: #10b981;
+        }
+
+        .save-error {
+            color: #ef4444;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- 1. Header -->
+    <div class="header">
+        <div class="header-left">
+            <h1>Data Generation Hub</h1>
+            <span class="sub-header">Script Manager</span>
+        </div>
+        <div class="header-right">
+            <a href="createbulkdata.html" class="btn-primary btn-execute">
+                🚀 Execute Scripts
+            </a>
+            <a href="script_management.html" class="btn-primary btn-success">
+                ✨ Create / Edit Script
+            </a>
+        </div>
+    </div>
+
+    <!-- 2. Stats (Horizontal) -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-value" id="totalScripts">-</div>
+            <div class="stat-label">Total Scripts</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="activeScripts" style="color: #34d399;">-</div>
+            <div class="stat-label">Active</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="draftScripts" style="color: #facc15;">-</div>
+            <div class="stat-label">Drafts</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value" id="unassignedCount" style="color: #f43f5e;">-</div>
+            <div class="stat-label">Unassigned</div>
+        </div>
+    </div>
+
+    <!-- 3. Controls & Table Wrapper -->
+    <div class="table-section">
+        <!-- Controls -->
+        <div class="action-bar" style="gap: 1rem;">
+            <input type="text" id="searchInput" class="search-input" style="width: 250px; flex-shrink: 1;"
+                placeholder="🔍 Search scripts..." onkeyup="filterTable()">
+            <div style="display: flex; gap: 10px; flex-shrink: 0;">
+                <select id="filterStatus" class="team-select" style="min-width: 120px;" onchange="filterTable()">
+                    <option value="ALL">All Status</option>
+                    <option value="Active">Active</option>
+                    <option value="Draft">Draft</option>
+                </select>
+                <select id="filterTeam" class="team-select" style="min-width: 200px;" onchange="filterTable()">
+                    <option value="ALL">All Teams</option>
+                    <option value="CS">CS</option>
+                    <option value="QA">QA</option>
+                    <option value="Both">Both</option>
+                    <option value="Unassigned">Unassigned</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Table -->
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 45%;">Script Name</th>
+                        <th style="width: 15%;">Status</th>
+                        <th style="width: 25%;">Assigned Team</th>
+                        <th style="width: 15%;">Reusable</th>
+                    </tr>
+                </thead>
+                <tbody id="scriptTableBody">
+                    <!-- Populated via JS -->
+                </tbody>
+            </table>
+
+            <div id="noDataMessage" style="padding: 3rem; text-align: center; color: #94a3b8; display: none;">
+                No scripts found matching your criteria.
+            </div>
+
+            <!-- Pagination -->
+            <div class="pagination" id="paginationControls">
+                <span class="page-info" id="pageInfo">Page 1 of 1</span>
+                <div>
+                    <button class="page-btn" id="prevBtn" onclick="prevPage()">Previous</button>
+                    <button class="page-btn" id="nextBtn" onclick="nextPage()">Next</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script_dashboard.js"></script>
+</body>
+
+</html>

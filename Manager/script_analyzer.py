@@ -27,12 +27,22 @@ def analyze_script(code_content):
     try:
         lines = code_content.splitlines()
         for line in lines[:20]: # Check first 20 lines
-            if line.strip().startswith("# EXPECTED_INPUT_COLUMNS:"):
+            if line.strip().startswith("# EXPECTED_INPUT_COLUMNS:") or line.strip().startswith("# Excel Columns"):
                 col_str = line.split(":", 1)[1].strip()
                 if col_str:
                      # Split and clean, keeping order
                      input_columns = [c.strip() for c in col_str.split(',') if c.strip()]
                 break
+    except:
+        pass
+
+    # 0b. Check for Explicit UI Output Definition (Source of Truth)
+    ui_columns = []
+    try:
+        # Regex to find: # - UI Column 'ID' (handling various indentation/spacing)
+        explicit_ui = re.findall(r"#\s*-\s*UI Column '([^']+)'", code_content)
+        if explicit_ui:
+            ui_columns = explicit_ui
     except:
         pass
 
@@ -50,6 +60,9 @@ def analyze_script(code_content):
         # 2. Merge Columns (Explicit wins, then AI)
         if not input_columns:
             input_columns = ai_result.get("excelColumns", [])
+            
+        if not ui_columns:
+            ui_columns = ai_result.get("uiColumns", [])
 
         # 3. Format Steps for Frontend (HTML)
         steps = ai_result.get("steps", [])
@@ -99,6 +112,7 @@ def analyze_script(code_content):
 
         return {
             "inputColumns": input_columns,
+            "uiColumns": ui_columns,
             "workflowDescription": final_steps_html,
             "raw_ai": ai_result # debug
         }

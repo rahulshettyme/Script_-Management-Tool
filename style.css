@@ -74,7 +74,7 @@ header h1 {
 
 .stat-card {
   background: var(--card-bg);
-  padding: 2rem;
+  padding: 1.25rem;
   border-radius: 16px;
   border: 1px solid var(--border-color);
   cursor: pointer;
@@ -124,7 +124,7 @@ header h1 {
 
 .form-section {
   background: rgba(30, 41, 59, 0.5);
-  padding: 2rem;
+  padding: 1.25rem;
   border-radius: 16px;
   border: 1px solid var(--border-color);
 }

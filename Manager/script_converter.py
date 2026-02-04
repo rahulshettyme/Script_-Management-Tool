@@ -7,8 +7,8 @@ import os
 class ScriptCleaner(ast.NodeTransformer):
     def __init__(self):
         super().__init__()
-        self.ignore_modules = {'RS_access_token_generate', 'openpyxl'}
-        self.ignore_funcs = {'get_bearer_token', 'load_workbook', 'read_excel'}
+        self.ignore_modules = {'RS_access_token_generate', 'openpyxl', 'GetAuthtoken'}
+        self.ignore_funcs = {'get_bearer_token', 'load_workbook', 'read_excel', 'get_access_token'}
         self.in_function_depth = 0
         self.removed_vars = set()
         self.in_loop = False
@@ -198,6 +198,11 @@ return True
                 # REMOVE TOKEN ASSIGNMENT -> Enforce Platform Token
                 if target.id == 'token':
                     return None
+                
+                # Handling 'access_token = get_access_token()' or similar
+                if target.id in ['access_token', 'bearer_token']:
+                    node.value = ast.Name(id='token', ctx=ast.Load()) 
+                    return node
         
         for target in node.targets:
              if isinstance(target, ast.Name) and target.id in ['env_url', 'environment_url']:
@@ -216,6 +221,36 @@ return True
         return node
         
 
+    
+    def visit_Attribute(self, node):
+        # DETECT: row.iloc
+        if node.attr == 'iloc' and isinstance(node.value, ast.Name):
+             # We can't replace .iloc directly, it's usually part of a Subscript (row.iloc[0])
+             # So we defer to visit_Subscript
+             pass
+        return self.generic_visit(node)
+
+    def visit_Subscript(self, node):
+        # TRANSFORM: row.iloc[i] -> _safe_iloc(row, i)
+        if isinstance(node.value, ast.Attribute) and node.value.attr == 'iloc':
+             if isinstance(node.value.value, ast.Name): # target object (e.g. 'row')
+                  target_name = node.value.value.id
+                  
+                  # Check if it is integer index
+                  idx_node = node.slice
+                  
+                  # Construct safe call
+                  new_node = ast.Call(
+                      func=ast.Name(id='_safe_iloc', ctx=ast.Load()),
+                      args=[
+                          ast.Name(id=target_name, ctx=ast.Load()),
+                          idx_node
+                      ],
+                      keywords=[]
+                  )
+                  return new_node
+        return self.generic_visit(node)
+
     def visit_Call(self, node):
         # SKIP if inside the logger function itself (Prevent Recursion)
         if self.current_func_name == '_log_req':
@@ -229,6 +264,8 @@ return True
             node.func = ast.Name(id='_log_post', ctx=ast.Load())
         elif full_name == 'requests.put':
             node.func = ast.Name(id='_log_put', ctx=ast.Load())
+        elif full_name == 'requests.delete':
+            node.func = ast.Name(id='_log_delete', ctx=ast.Load())
             
         self.generic_visit(node)
         return node
@@ -422,7 +459,25 @@ def _log_req(method, url, **kwargs):
     print(f"[API_DEBUG] 🚀 REQUEST: {method} {url}")
     print(f"[API_DEBUG] 🔑 TOKEN META: {token_meta}")
     
-    payload = kwargs.get('json') or kwargs.get('data') or "No Payload"
+    payload = kwargs.get('json') or kwargs.get('data')
+    
+    # Multipart Support (DTO)
+    if not payload:
+        files = kwargs.get('files')
+        if files and isinstance(files, dict):
+             # Try to find 'dto' or 'body'
+             if 'dto' in files:
+                 # files['dto'] is usually (filename, content, content_type)
+                 val = files['dto']
+                 if isinstance(val, (list, tuple)) and len(val) > 1:
+                     payload = f"[Multipart DTO] {val[1]}" 
+                 else:
+                     payload = f"[Multipart DTO] {val}"
+             else:
+                 # Just list keys
+                 payload = f"[Multipart Files] Keys: {list(files.keys())}"
+    
+    if not payload: payload = "No Payload"
     print(f"[API_DEBUG] 📦 PAYLOAD: {payload}")
     print(f"[API_DEBUG] ----------------------------------------------------------------")
 
@@ -430,16 +485,27 @@ def _log_req(method, url, **kwargs):
         if method == 'GET': resp = requests.get(url, **kwargs)
         elif method == 'POST': resp = requests.post(url, **kwargs)
         elif method == 'PUT': resp = requests.put(url, **kwargs)
+        elif method == 'DELETE': resp = requests.delete(url, **kwargs)
         else: resp = requests.request(method, url, **kwargs)
         
-        try: 
-            body_preview = resp.text[:1000].replace('\\n', ' ').replace('\\r', '') 
+        body_preview = "Binary/No Content"
+        try:
+             # Try to parse and pretty print JSON
+             if not resp.text or not resp.text.strip():
+                 body_preview = "[Empty Response]"
+             else:
+                 try:
+                     json_obj = resp.json()
+                     body_preview = json.dumps(json_obj, indent=2)
+                 except:
+                     # Fallback to text
+                     body_preview = resp.text[:4000] # Increased limit
         except: 
-            body_preview = "Binary/No Content"
+             pass
         
         status_icon = "✅" if 200 <= resp.status_code < 300 else "❌"
         print(f"[API_DEBUG] {status_icon} RESPONSE [{resp.status_code}]")
-        print(f"[API_DEBUG] 📄 BODY: {body_preview}")
+        print(f"[API_DEBUG] 📄 BODY:\\n{body_preview}")
         print(f"[API_DEBUG] ----------------------------------------------------------------\\n")
         
         return resp
@@ -451,6 +517,25 @@ def _log_req(method, url, **kwargs):
 def _log_get(url, **kwargs): return _log_req('GET', url, **kwargs)
 def _log_post(url, **kwargs): return _log_req('POST', url, **kwargs)
 def _log_put(url, **kwargs): return _log_req('PUT', url, **kwargs)
+def _log_delete(url, **kwargs): return _log_req('DELETE', url, **kwargs)
+
+def _safe_iloc(row, idx):
+    try:
+        if isinstance(row, dict):
+             # Dict access by index (ordered keys in Python 3.7+)
+             keys = list(row.keys())
+             if 0 <= idx < len(keys):
+                 val = row[keys[idx]]
+                 # Clean string if needed
+                 return val.strip() if isinstance(val, str) else val
+             return None
+        elif isinstance(row, list):
+             if 0 <= idx < len(row): return row[idx]
+             return None
+        # Fallback for actual pandas series if we ever support it fully
+        return row.iloc[idx]
+    except:
+        return None
 """
     wrapper_nodes = ast.parse(wrapper_source).body
 
@@ -687,8 +772,9 @@ for idx, row in enumerate(builtins.data):
 
     # If user provided a run function, return its result
     if user_run_node:
-        # return _user_run(data, token, env_config)
-        call_user_run = ast.Return(
+        # res = _user_run(data, token, env_config)
+        assign_res = ast.Assign(
+            targets=[ast.Name(id='res', ctx=ast.Store())],
             value=ast.Call(
                 func=ast.Name(id='_user_run', ctx=ast.Load()),
                 args=[
@@ -699,9 +785,35 @@ for idx, row in enumerate(builtins.data):
                 keywords=[]
             )
         )
-        run_body.append(call_user_run)
+        run_body.append(assign_res)
+
+        # Sync Logic (Inject After Run)
+        sync_source = """
+try:
+    # Only sync if res is None (User didn't return anything explicit)
+    if res is None and hasattr(builtins, 'data_df'):
+        import pandas as pd
+        if isinstance(builtins.data_df, pd.DataFrame):
+            # Prioritize the DataFrame content as the source of truth
+            res = builtins.data_df.where(pd.notnull(builtins.data_df), None).to_dict(orient='records')
+except Exception as e:
+    print(f"[Warn] Failed to sync data_df to result: {e}")
+"""
+        run_body.extend(ast.parse(sync_source).body)
+        run_body.append(ast.Return(value=ast.Name(id='res', ctx=ast.Load())))
     else:
-        # Default behavior: return data (assuming side-effects or inline modification)
+        # Default behavior: Sync data_df back to data, then return data
+        sync_source = """
+try:
+    if hasattr(builtins, 'data_df'):
+        import pandas as pd
+        if isinstance(builtins.data_df, pd.DataFrame):
+            # Convert NaN to None (null in JSON) for cleaner output
+            data = builtins.data_df.where(pd.notnull(builtins.data_df), None).to_dict(orient='records')
+except Exception as e:
+    print(f"[Warn] Failed to sync data_df to data: {e}")
+"""
+        run_body.extend(ast.parse(sync_source).body)
         run_body.append(ast.Return(value=ast.Name(id='data', ctx=ast.Load())))
 
     run_func = ast.FunctionDef(

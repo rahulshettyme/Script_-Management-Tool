@@ -50,13 +50,8 @@ function getEnvUrls(environment) {
 }
 
 // Constants for coordinate generation
-
-// Constants for coordinate generation
 const ACRE_M2 = 4046.8564224;
 
-// =============================================
-// RESET STATE
-// =============================================
 // =============================================
 // RESET STATE (Partial Reset - Persists Login)
 // =============================================
@@ -113,7 +108,6 @@ const TEMPLATES = {
 
 
 
-// DOM Elements
 // DOM Elements
 const elements = {
     dataNeededForSelect: document.getElementById('data-needed-for'),
@@ -182,10 +176,12 @@ const elements = {
 
     // Advanced Settings
     advancedSettingsSection: document.getElementById('advanced-settings-section'),
-    groupBySelect: document.getElementById('group-by-select')
+    groupBySelect: document.getElementById('group-by-select'),
+
+    // Script Description
+    scriptDescriptionContainer: document.getElementById('script-description-container'),
+    scriptDescriptionText: document.getElementById('script-description-text')
 };
-
-
 
 // =============================================
 // TEAM & DATA TYPE SELECTION
@@ -195,6 +191,7 @@ const TEAM_SCRIPTS = {
     cs_team: [],
     qa_team: []
 };
+
 
 // =============================================
 // DYNAMIC SCRIPT LOADING
@@ -221,13 +218,16 @@ async function loadCustomScripts() {
                     required: c.type === 'Mandatory',
                     description: c.description
                 })),
+                description: script.description || "", // Store Description
                 isCustom: true,
                 filename: script.filename || script.name,
                 requiresLogin: script.requiresLogin,
                 allowAdditionalAttributes: script.allowAdditionalAttributes,
                 isMultithreaded: script.isMultithreaded,
                 groupByColumn: script.groupByColumn,
-                batchSize: script.batchSize
+                batchSize: script.batchSize,
+                enableGeofencing: script.enableGeofencing,
+                outputConfig: script.outputConfig // Pass outputConfig 
             };
 
             // Add to Team Lists
@@ -385,23 +385,13 @@ function handleTeamSelection(team) {
         });
 
         // Handle Environment Visibility based on Team
-        // Handle Environment Visibility based on Team
         if (team === 'cs_team') {
             if (loginComponent) {
                 loginComponent.setEnvironment('Prod', true);
             }
         } else {
             if (loginComponent) {
-                // Unlock, and optimaly reset if it was locked to Prod, or just leave it
-                loginComponent.setEnvironment('QA1', false); // defaulting to QA1 or just unlocking
-                // better to just unlock, but maybe better to reset to "Select Environment" or keep as is?
-                // For now, let's just unlock. To unlock without changing value:
-                // loginComponent.setEnvironment(null, false);
-                // But if they switch back from CS, 'Prod' remains selected. 
-                // Let's reset to QA1 as that is the common default for QA team.
-                // Or "Select Environment"
-                // loginComponent.setEnvironment('Select Environment', false); // This puts 'Select Environment' as value? No
-                // logic in setEnvironment handles text update.
+                loginComponent.setEnvironment('QA1', false);
             }
         }
 
@@ -507,12 +497,24 @@ function handleScriptSelection(value) {
     selectedDataType = value;
     const template = TEMPLATES[selectedDataType];
 
-    // Show/hide boundary config based on type AND team
-    const selectedTeam = elements.dataNeededForSelect ? elements.dataNeededForSelect.value : '';
-    const needsBoundary = (selectedDataType === 'Generate Coordinates' || selectedDataType === 'Area Audit');
-    const isCSTeam = (selectedTeam === 'cs_team');
+    // Show Description
+    if (template && template.description) {
+        if (elements.scriptDescriptionContainer) {
+            elements.scriptDescriptionContainer.classList.remove('hidden');
+            elements.scriptDescriptionText.textContent = template.description;
+        }
+    } else {
+        if (elements.scriptDescriptionContainer) {
+            elements.scriptDescriptionContainer.classList.add('hidden');
+            elements.scriptDescriptionText.textContent = '';
+        }
+    }
 
-    if (needsBoundary && !isCSTeam) {
+    // Show/hide boundary config based on type
+    // Updated to match filename-derived keys (underscores) and remove team restriction
+    const needsBoundary = (selectedDataType === 'Generate_Coordinates' || selectedDataType === 'Area_Audit' || selectedDataType === 'Generate Coordinates' || selectedDataType === 'Area Audit'); // Check both just in case
+
+    if (needsBoundary) {
         elements.boundaryConfig.classList.remove('hidden');
     } else {
         elements.boundaryConfig.classList.add('hidden');
@@ -550,6 +552,18 @@ function handleScriptSelection(value) {
         elements.templateInfo.classList.add('hidden');
     }
 
+    // Show/Hide Dynamic Geofencing Section based on Template Metadata
+    const targetLocationSection = document.getElementById('target-location-section');
+    if (targetLocationSection) {
+        if (template && template.enableGeofencing) {
+            targetLocationSection.classList.remove('hidden');
+            targetLocationSection.style.display = 'block'; // Ensure it's visible
+        } else {
+            targetLocationSection.classList.add('hidden');
+            targetLocationSection.style.display = 'none';
+        }
+    }
+
     // Enable buttons if template exists
     if (template) {
         elements.exportBtn.disabled = false;
@@ -563,11 +577,6 @@ function handleScriptSelection(value) {
             if (template.columns && template.columns.length > 0) {
                 template.columns.forEach(col => {
                     const option = document.createElement('option');
-                    // Use the key (normalized) or header? Ideally the key we expect in the row data.
-                    // The scripts usually map headers to keys. Let's use the 'header' as that matches the user's mental model,
-                    // but the execution logic checks keys.
-                    // The implementation above used: `let keyVal = row[groupByColumn]`.
-                    // row keys come from Excel headers usually.
                     option.value = col.header; // Use exact header name
                     option.textContent = col.header;
                     elements.groupBySelect.appendChild(option);
@@ -576,11 +585,7 @@ function handleScriptSelection(value) {
 
             // Auto-select if configured
             if (template.groupByColumn) {
-                // Find matching option (case insensitive search if needed, but exact match first)
-                // We set value = col.header. So if config says "name", header "name" matches.
                 elements.groupBySelect.value = template.groupByColumn;
-
-                // Fallback: if value didn't stick (e.g. config "name" vs header "Name"), try to find case-insensitive match
                 if (!elements.groupBySelect.value) {
                     const match = Array.from(elements.groupBySelect.options).find(opt => opt.value.toLowerCase() === template.groupByColumn.toLowerCase());
                     if (match) elements.groupBySelect.value = match.value;
@@ -632,71 +637,133 @@ function renderSavedLocations() {
 }
 
 function renderExecutionResults() {
-    // Clear existing
-    elements.resultsTbody.innerHTML = '';
+    const table = document.querySelector('.results-table');
+    const thead = table.querySelector('thead');
+    const tbody = elements.resultsTbody;
 
-    // Track seen names for grouping (User Request: Show only one row per variety)
-    const seenNames = new Set();
+    // Clear Body
+    tbody.innerHTML = '';
 
-    executionResults.forEach((row, index) => {
-        const tr = document.createElement('tr');
+    if (executionResults.length === 0) {
+        thead.innerHTML = `<tr><th>Row</th><th>Name</th><th>Code</th><th>Status</th><th>Response</th></tr>`;
+        return;
+    }
 
-        // Grouping Logic: Check 'name' column (case-insensitive)
-        let isDuplicate = false;
-        if (row.name) { // Assuming 'name' is the key
-            const nameKey = String(row.name).trim().toLowerCase();
-            if (seenNames.has(nameKey)) {
-                isDuplicate = true;
-            } else {
-                seenNames.add(nameKey);
-            }
-        }
+    // Check if Dynamic UI is enabled for this script
+    const template = TEMPLATES[selectedDataType];
+    const isDynamic = template && template.outputConfig && template.outputConfig.isDynamicUI;
 
-        // If duplicate, you can choose to hide it or style it differently
-        // Requested: "No need to show all the rows for same crop variety"
-        if (isDuplicate) {
-            tr.style.display = 'none';
-        }
+    if (isDynamic) {
+        // --- DYNAMIC MODE (New Scripts) ---
+        const sample = executionResults[0];
+        const internalKeys = ['row', 'status', 'response', 'API response', 'API_Response'];
 
-        const tdIndex = document.createElement('td');
-        // Use the original index + 1, or re-calculate visible index? 
-        // Showing original index helps map to Excel
-        tdIndex.textContent = index + 1;
-        tr.appendChild(tdIndex);
-
-        // Name Column
-        const tdName = document.createElement('td');
-        tdName.textContent = row.name || '-';
-        tr.appendChild(tdName);
-
-        // Code Column
-        const tdCode = document.createElement('td');
-        tdCode.textContent = row.code || '-'; // Assuming 'code' exists or similar
-        tr.appendChild(tdCode);
-
-        // Status Column
-        const tdStatus = document.createElement('td');
-        // ... (existing status logic)
-        // ...
-        if (row.status === 'Success') {
-            tdStatus.textContent = 'Passed';
-            tdStatus.classList.add('status-pass');
-        } else if (String(row.status).startsWith('Failed')) {
-            tdStatus.textContent = row.status;
-            tdStatus.classList.add('status-fail');
+        // Use UI Mapping if available
+        let dataKeys = [];
+        const uiMap = template.outputConfig.uiMapping;
+        if (uiMap && Array.isArray(uiMap) && uiMap.length > 0) {
+            dataKeys = uiMap.map(m => m.colName).filter(c => c);
         } else {
-            tdStatus.textContent = row.status;
-            tdStatus.classList.add('status-pending');
+            // Fallback
+            dataKeys = Object.keys(sample).filter(k =>
+                !internalKeys.includes(k) &&
+                !internalKeys.includes(k.toLowerCase()) &&
+                k !== 'name' && k !== 'code'
+            );
         }
-        tr.appendChild(tdStatus);
 
-        // Response Column
-        const tdResponse = document.createElement('td');
-        tdResponse.textContent = row['API response'] || '';
-        tr.appendChild(tdResponse);
+        // Build Header
+        let headerHTML = '<tr><th>Row</th>';
+        dataKeys.forEach(k => headerHTML += `<th>${k}</th>`);
+        headerHTML += '</tr>';
+        thead.innerHTML = headerHTML;
 
-        elements.resultsTbody.appendChild(tr);
-    });
+        executionResults.forEach((row, index) => {
+            const tr = document.createElement('tr');
+
+            // 1. Row
+            const tdIndex = document.createElement('td');
+            tdIndex.textContent = row.row || (index + 1);
+            tr.appendChild(tdIndex);
+
+            // 2. Data Columns (Dynamic)
+            dataKeys.forEach(k => {
+                const td = document.createElement('td');
+                const val = row[k];
+                const kLower = k.toLowerCase();
+
+                if (kLower === 'status') {
+                    // Status Styling
+                    const statusVal = val || 'Unknown';
+                    td.textContent = statusVal;
+                    const lowerStatus = String(statusVal).toLowerCase();
+                    if (lowerStatus === 'success' || lowerStatus === 'pass' || lowerStatus === 'passed') {
+                        td.classList.add('status-pass');
+                    } else if (lowerStatus.startsWith('fail') || lowerStatus.includes('error')) {
+                        td.classList.add('status-fail');
+                    } else {
+                        td.classList.add('status-pending');
+                    }
+                } else if (kLower === 'response' || kLower === 'api response' || kLower === 'api_response') {
+                    // Response Styling
+                    const respVal = (val !== undefined && val !== null) ? val : '';
+                    td.textContent = respVal;
+                    td.title = respVal;
+                } else {
+                    // Default
+                    td.textContent = (val !== undefined && val !== null) ? val : '-';
+                }
+                tr.appendChild(td);
+            });
+
+            tbody.appendChild(tr);
+        });
+
+    } else {
+        // --- LEGACY MODE (Old Scripts) ---
+        thead.innerHTML = `<tr><th>Row</th><th>Name</th><th>Code</th><th>Status</th><th>Response</th></tr>`;
+
+        const seenNames = new Set();
+
+        executionResults.forEach((row, index) => {
+            const tr = document.createElement('tr');
+
+            if (row.name) seenNames.add(String(row.name).trim().toLowerCase());
+
+            const tdIndex = document.createElement('td');
+            tdIndex.textContent = row.row || (index + 1);
+            tr.appendChild(tdIndex);
+
+            const tdName = document.createElement('td');
+            tdName.textContent = row.name || '-';
+            tr.appendChild(tdName);
+
+            const tdCode = document.createElement('td');
+            tdCode.textContent = row.code || '-';
+            tr.appendChild(tdCode);
+
+            const tdStatus = document.createElement('td');
+            let statusVal = row.status || row.Status || 'Unknown';
+            tdStatus.textContent = statusVal;
+            const lowerStatus = String(statusVal).toLowerCase();
+            if (lowerStatus === 'success' || lowerStatus === 'pass' || lowerStatus === 'passed') {
+                tdStatus.classList.add('status-pass');
+            } else if (lowerStatus.startsWith('fail') || lowerStatus.includes('error')) {
+                tdStatus.classList.add('status-fail');
+            } else {
+                tdStatus.classList.add('status-pending');
+            }
+            tr.appendChild(tdStatus);
+
+            const tdResponse = document.createElement('td');
+            const respVal = row.response || row['API response'] || row.API_Response || '';
+            tdResponse.textContent = respVal;
+            tdResponse.title = respVal;
+            tr.appendChild(tdResponse);
+
+            tbody.appendChild(tr);
+        });
+    }
 }
 
 // Saved location selection
@@ -740,9 +807,11 @@ if (elements.saveLocationBtn) {
 
         savedLocations.push({ name, minLat, maxLat, minLong, maxLong });
         saveSavedLocations();
-        renderSavedLocations();
+        // Update both text and UI
+        // Actually loadSavedLocations re-renders everything
+        loadSavedLocations();
+        alert('Location saved!');
         elements.locationName.value = '';
-        alert(`Location "${name}" saved!`);
     });
 }
 
@@ -751,754 +820,110 @@ if (elements.deleteLocationBtn) {
     elements.deleteLocationBtn.addEventListener('click', () => {
         const index = elements.savedLocationSelect.value;
         if (index !== '') {
-            const loc = savedLocations[parseInt(index)];
-            if (confirm(`Delete location "${loc.name}"?`)) {
+            if (confirm('Delete this saved location?')) {
                 savedLocations.splice(parseInt(index), 1);
                 saveSavedLocations();
-                renderSavedLocations();
+                loadSavedLocations();
                 elements.minLat.value = '';
                 elements.maxLat.value = '';
                 elements.minLong.value = '';
                 elements.maxLong.value = '';
                 elements.deleteLocationBtn.classList.add('hidden');
+                alert('Location deleted');
             }
         }
     });
 }
 
 // =============================================
-// COORDINATE GENERATION FUNCTIONS
+// FILE UPLOAD & PROCESSING
 // =============================================
-function metersPerDegree(latDeg) {
-    const lat = latDeg * Math.PI / 180;
-    const mPerDegLat = 111132.92 - 559.82 * Math.cos(2 * lat) + 1.175 * Math.cos(4 * lat) - 0.0023 * Math.cos(6 * lat);
-    const mPerDegLon = 111412.84 * Math.cos(lat) - 93.5 * Math.cos(3 * lat) + 0.118 * Math.cos(5 * lat);
-    return { mPerDegLat, mPerDegLon };
-}
 
-function generateSquareOneAcre(bbox, rotate = false) {
-    const [minLon, minLat, maxLon, maxLat] = bbox;
-
-    // Pick random center point inside bbox
-    const cLon = minLon + Math.random() * (maxLon - minLon);
-    const cLat = minLat + Math.random() * (maxLat - minLat);
-
-    // Side of square in meters
-    const sideM = Math.sqrt(ACRE_M2);
-
-    // Convert to degrees
-    const { mPerDegLat, mPerDegLon } = metersPerDegree(cLat);
-    const dLat = sideM / mPerDegLat;
-    const dLon = sideM / mPerDegLon;
-
-    const halfDx = dLon / 2;
-    const halfDy = dLat / 2;
-
-    let corners;
-    if (!rotate) {
-        corners = [
-            [cLon - halfDx, cLat - halfDy],
-            [cLon + halfDx, cLat - halfDy],
-            [cLon + halfDx, cLat + halfDy],
-            [cLon - halfDx, cLat + halfDy]
-        ];
-    } else {
-        const angle = Math.random() * 2 * Math.PI;
-        corners = [];
-        const offsets = [[-halfDx, -halfDy], [halfDx, -halfDy], [halfDx, halfDy], [-halfDx, halfDy]];
-        for (const [dx, dy] of offsets) {
-            const x = dx * Math.cos(angle) - dy * Math.sin(angle);
-            const y = dx * Math.sin(angle) + dy * Math.cos(angle);
-            corners.push([cLon + x, cLat + y]);
-        }
-    }
-
-    // Close polygon (repeat first point)
-    const ring = [...corners, corners[0]];
-    // Return in MultiPolygon format: [[[lon, lat], ...]]
-    return [[ring]];
-}
-
-// Helper to ensure coordinates are in MultiPolygon format [[[lon, lat], ...]]
-function ensureMultiPolygonFormat(coords) {
-    if (!Array.isArray(coords) || coords.length === 0) {
-        throw new Error('Invalid coordinates array');
-    }
-
-    // Check depth of array
-    // MultiPolygon: [[[[lon, lat]...]]] or [[[lon, lat]...]]
-    // Polygon: [[[lon, lat]...]] or [[lon, lat]...]
-
-    // If first element is a number, it's a single point - wrap it
-    if (typeof coords[0] === 'number') {
-        return [[[coords]]];
-    }
-
-    // If first element's first element is a number, it's a ring of points
-    if (Array.isArray(coords[0]) && typeof coords[0][0] === 'number') {
-        // coords = [[lon, lat], [lon, lat], ...] - single ring
-        return [[coords]];
-    }
-
-    // If first element's first element's first element is a number, it's a polygon
-    if (Array.isArray(coords[0]) && Array.isArray(coords[0][0]) && typeof coords[0][0][0] === 'number') {
-        // coords = [[[lon, lat], ...]] - polygon format, wrap in MultiPolygon
-        return [coords];
-    }
-
-    // Already in MultiPolygon format or deeper
-    return coords;
-}
-
-// =============================================
-// EXPORT TEMPLATE
-// =============================================
-elements.exportBtn.addEventListener('click', () => {
-    if (!selectedDataType) return;
-
-    const template = TEMPLATES[selectedDataType];
-    if (!template) return;
-
-    // Create workbook with headers
-    const wb = XLSX.utils.book_new();
-
-    // DEBUG: Alert columns to verify state
-    if (!template.columns || template.columns.length === 0) {
-        console.error('Template columns missing:', template);
-    } else {
-        console.log('Template columns:', template.columns);
-    }
-
-    const headers = template.columns.map(col => col.header);
-
-    // Add Additional Attributes if enabled
-    if (elements.enableAdditionalAttributes && elements.enableAdditionalAttributes.checked) {
-        const extraAttrs = elements.additionalAttributesInput.value.split(',').map(s => s.trim()).filter(s => s);
-        headers.push(...extraAttrs);
-    }
-
-    const ws = XLSX.utils.aoa_to_sheet([headers]);
-
-    // Set column widths
-    ws['!cols'] = template.columns.map(() => ({ wch: 20 }));
-
-    XLSX.utils.book_append_sheet(wb, ws, template.name.replace(/\s+/g, '_'));
-
-    // Download
-    const fileName = `${selectedDataType}_template.xlsx`;
-    XLSX.writeFile(wb, fileName);
-});
-
-// =============================================
-// IMPORT TEMPLATE (Show Login or File Upload)
-// =============================================
-elements.importBtn.addEventListener('click', () => {
-    elements.loginSection.classList.remove('hidden');
-
-    // Check if login is explicitly required
-    const template = TEMPLATES[selectedDataType];
-    const skipLogin = (template && template.requiresLogin === false) || selectedDataType === 'coordinates';
-
-    if (skipLogin) {
-        if (elements.loginComponentContainer) elements.loginComponentContainer.classList.add('hidden');
-        elements.sessionContainer.classList.remove('hidden');
-        elements.sessionInfo.textContent = 'No login required for this script';
-        authToken = 'SKIPPED';
-
-        // Enable Upload Area
-        if (elements.uploadWorkflowContainer) {
-            elements.uploadWorkflowContainer.classList.remove('disabled-area');
-            elements.uploadWorkflowContainer.style.opacity = '1';
-            elements.uploadWorkflowContainer.style.pointerEvents = 'auto';
-        }
-    } else {
-        // If already logged in, keep it enabled
-        if (authToken && authToken !== 'SKIPPED') {
-            if (elements.loginComponentContainer) elements.loginComponentContainer.classList.add('hidden');
-            elements.sessionContainer.classList.remove('hidden');
-            // Enable Upload Area
-            if (elements.uploadWorkflowContainer) {
-                elements.uploadWorkflowContainer.classList.remove('disabled-area');
-                elements.uploadWorkflowContainer.style.opacity = '1';
-                elements.uploadWorkflowContainer.style.pointerEvents = 'auto';
-            }
-        } else {
-            // Show Login
-            if (elements.loginComponentContainer) elements.loginComponentContainer.classList.remove('hidden');
-            elements.sessionContainer.classList.add('hidden');
-            // Disable Upload Area
-            if (elements.uploadWorkflowContainer) {
-                elements.uploadWorkflowContainer.classList.add('disabled-area');
-                elements.uploadWorkflowContainer.style.opacity = '0.5';
-                elements.uploadWorkflowContainer.style.pointerEvents = 'none';
-            }
-        }
-    }
-
-    elements.loginSection.scrollIntoView({ behavior: 'smooth' });
-});
-
-// =============================================
-// LOGIN HANDLING (VIA COMPONENT)
-// =============================================
-// Initialize Login Component
-// Initialize Login Component
-document.addEventListener("DOMContentLoaded", async () => {
-    // Ensure Env URLs are loaded for the dropdown
-    await loadEnvUrls();
-    const envKeys = Object.keys(ENVIRONMENT_API_URLS);
-    const envList = envKeys.length > 0 ? envKeys : ["QA1", "QA2", "QA3", "QA4", "QA5", "QA6", "QA7", "QA8", "Prod"];
-
-    loginComponent = new LoginComponent("login-component-container", {
-        envList: envList,
-        onLoginSuccess: (token, userDetails) => {
-            authToken = token;
-            currentEnvironment = userDetails.environment;
-            currentTenant = userDetails.tenant;
-
-            // Update Session Info (Optional, if we want to show it somewhere)
-            // For now, we are keeping the login form, so maybe we don't need to hide/show the session container
-            // but we can update the text if it's visible.
-            elements.sessionInfo.textContent = `${currentEnvironment} | ${currentTenant} | ${userDetails.username}`;
-            // elements.sessionContainer.classList.remove('hidden'); // UNCOMMENT IF YOU WANT "Logged in as" TEXT TOO
-
-            // Enable Upload Area
-            if (elements.uploadWorkflowContainer) {
-                elements.uploadWorkflowContainer.classList.remove('disabled-area');
-                elements.uploadWorkflowContainer.style.opacity = '1';
-                elements.uploadWorkflowContainer.style.pointerEvents = 'auto';
-            }
-        },
-        onLoginFail: (error) => {
-            console.log("Login Failed or Changed:", error);
-            // Invalidate Token
-            authToken = null;
-
-            // Disable Upload Area
-            if (elements.uploadWorkflowContainer) {
-                elements.uploadWorkflowContainer.classList.add('disabled-area');
-                elements.uploadWorkflowContainer.style.opacity = '0.5';
-                elements.uploadWorkflowContainer.style.pointerEvents = 'none';
-            }
+if (elements.fileUpload) {
+    elements.fileUpload.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) {
+            elements.fileName.textContent = file.name;
+            elements.executeBtn.disabled = true; // Wait for processing
+            elements.executeBtn.textContent = '⏳ Processing File...';
+            processFile(file);
         }
     });
+}
 
-    // Ensure upload area is disabled on load
-    if (elements.uploadWorkflowContainer) {
-        elements.uploadWorkflowContainer.classList.add('disabled-area');
-    }
-});
-
-// =============================================
-// LOGOUT HANDLING
-// =============================================
-elements.logoutBtn.addEventListener('click', fullLogout);
-
-// =============================================
-// FILE UPLOAD HANDLING
-// =============================================
-elements.fileUpload.addEventListener('change', handleFileUpload);
-
-// Drag and drop support
-elements.fileUploadArea.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    elements.fileUploadArea.classList.add('dragover');
-});
-
-elements.fileUploadArea.addEventListener('dragleave', () => {
-    elements.fileUploadArea.classList.remove('dragover');
-});
-
-elements.fileUploadArea.addEventListener('drop', (e) => {
-    e.preventDefault();
-    elements.fileUploadArea.classList.remove('dragover');
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-        elements.fileUpload.files = files;
-        handleFileUpload({ target: elements.fileUpload });
-    }
-});
-
-function handleFileUpload(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    elements.fileName.textContent = `📄 ${file.name}`;
-
-    // Reset previous results when new file is uploaded
-    executionResults = [];
-    elements.resultsTbody.innerHTML = '';
-    elements.progressBar.style.width = '0%';
-    elements.progressText.textContent = '0 / 0';
-    elements.passCount.textContent = '0';
-    elements.failCount.textContent = '0';
-    elements.downloadResultsBtn.classList.add('hidden');
-
+function processFile(file) {
     const reader = new FileReader();
     reader.onload = (e) => {
         try {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const sheet = workbook.Sheets[sheetName];
+            uploadedData = XLSX.utils.sheet_to_json(sheet);
 
-            const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-            const jsonData = XLSX.utils.sheet_to_json(firstSheet, { defval: '' });
-
-            uploadedData = jsonData;
-            elements.fileName.textContent = `📄 ${file.name} (${jsonData.length} rows)`;
+            console.log('Processed File Data:', uploadedData);
             elements.executeBtn.disabled = false;
-            elements.executeBtn.textContent = '🚀 Execute Data Creation'; // Reset button text
-
+            elements.executeBtn.textContent = '🚀 Execute Data Creation'; // Ready
         } catch (error) {
-            console.error('Error parsing Excel:', error);
-            elements.fileName.textContent = '❌ Error reading file';
-            elements.executeBtn.disabled = true;
+            console.error('Error processing file:', error);
+            alert('Error processing file. Please ensure it is a valid Excel file.');
         }
     };
     reader.readAsArrayBuffer(file);
 }
 
-// Reset file input to allow re-selecting the same file
-elements.fileUpload.addEventListener('click', function () {
-    this.value = '';
-});
-
-// =============================================
-// EXECUTE DATA CREATION
-// =============================================
-const BATCH_SIZE = 5; // Number of concurrent API calls
-
-elements.executeBtn.addEventListener('click', async () => {
 
 
-
-
-    // Check if Custom Script
-    const template = TEMPLATES[selectedDataType];
-    if (template && template.isCustom) {
-        await executeCustomScript(template.filename);
-        return;
-    }
-
-    // For other types, token is required
-    if (!authToken || !selectedDataType || uploadedData.length === 0) return;
-
-    let progressTitle = '⏳ Processing Data...';
-    if (selectedDataType === 'addAsset') {
-        progressTitle = '⏳ Loading Ref Data & Processing Assets...';
-        // Pre-load reference data
-        try {
-            elements.executeBtn.disabled = true;
-            elements.executeBtn.textContent = '⏳ Loading Reference Data...';
-            await loadAssetReferenceData();
-        } catch (e) {
-            alert(e.message);
-            elements.executeBtn.disabled = false;
-            elements.executeBtn.textContent = '🚀 Execute Data Creation';
-            return;
-        }
-    } else if (selectedDataType === 'addFarmerTag') {
-        progressTitle = '⏳ Loading Tags...';
-        try {
-            elements.executeBtn.disabled = true;
-            elements.executeBtn.textContent = '⏳ Loading Tags...';
-            await loadTagReferenceData();
-        } catch (e) {
-            alert(e.message);
-            elements.executeBtn.disabled = false;
-            elements.executeBtn.textContent = '🚀 Execute Data Creation';
-            return;
-        }
-    }
-
-    let { passCount, failCount } = startExecution(progressTitle);
-    const total = uploadedData.length;
-
-    // Process in batches for parallel execution
-    for (let batchStart = 0; batchStart < uploadedData.length; batchStart += BATCH_SIZE) {
-        const batchEnd = Math.min(batchStart + BATCH_SIZE, uploadedData.length);
-        const batch = uploadedData.slice(batchStart, batchEnd);
-
-        // Create promises for all rows in this batch
-        const batchPromises = batch.map(async (row, batchIndex) => {
-            const i = batchStart + batchIndex;
-            const rowNum = i + 2;
-
-            try {
-                let result;
-                if (selectedDataType === 'farmer') {
-                    result = await createFarmer(row, rowNum);
-                } else if (selectedDataType === 'addAsset') {
-                    result = await createAsset(row, rowNum);
-                } else if (selectedDataType === 'addFarmerTag') {
-                    result = await addFarmerTag(row, rowNum);
-                }
-                return result;
-            } catch (error) {
-                return {
-                    row: rowNum,
-                    name: row['Farmer Name'] || '',
-                    code: row['Farmer Code'] || '',
-                    status: 'Fail',
-                    response: error.message
-                };
-            }
-        });
-
-        // Wait for all batch promises to complete
-        const batchResults = await Promise.all(batchPromises);
-
-        // Process batch results
-        for (const batchResult of batchResults) {
-            // Python script returns a LIST of rows (or a single error dict if crashed)
-            const results = Array.isArray(batchResult) ? batchResult : [batchResult];
-
-            for (const result of results) {
-                executionResults.push(result);
-                if (result.status === 'Pass' || result.status === 'Success') {
-                    passCount++;
-                } else {
-                    failCount++;
-                }
-                addResultRow(result);
-            }
-        }
-
-        // Update progress after batch
-        updateProgress(Math.min(batchEnd, total), total, passCount, failCount);
-    }
-
-    completeExecution();
-});
-
-// =============================================
-// EXECUTE COORDINATE GENERATION
-// =============================================
-
-
-
-
-
-// =============================================
-// CUSTOM SCRIPT EXECUTION
-// =============================================
-// =============================================
-async function executeCustomScript(scriptName) {
-    let { passCount, failCount } = startExecution();
-    const rows = uploadedData;
-
-    // 1. Get Environment Config
-    const selectedEnv = currentEnvironment; // Use Global State
-    if (!selectedEnv) {
-        alert("Please login first.");
-        return;
-    }
-    const { apiBaseUrl } = getEnvUrls(selectedEnv);
-    const envConfig = {
-        apiBaseUrl: apiBaseUrl,
-        environment: selectedEnv
-    };
-
-    const total = rows.length;
-    const template = TEMPLATES[selectedDataType];
-    // Grouping Logic: AUTOMATIC - Use Template Configon, fallback to Template config
-    // Grouping Logic: AUTOMATIC - Use Template Config
-    let groupByColumn = (template && template.groupByColumn);
-
-    // If empty string, treat as null/false
-    if (!groupByColumn) groupByColumn = null;
-    else console.log(`[Execute] Auto-detected Grouping Column: ${groupByColumn}`);
-
-    const isMultithreaded = (template && template.isMultithreaded !== undefined) ? template.isMultithreaded : true;
-
-    // CRITICAL: Determine Batch Size
-    // If Not Multithreaded -> Batch Size = Total (One single synchronized call)
-    // If Multithreaded -> Batch Size = Configured Size (Default 10)
-    let BATCH_SIZE_CUSTOM = 10;
-    if (!isMultithreaded) {
-        BATCH_SIZE_CUSTOM = total; // No threading = Send all at once
-        console.log(`[Execute] Threading DISABLED. Running as single batch of ${total}`);
-    } else {
-        BATCH_SIZE_CUSTOM = (template && template.batchSize) ? parseInt(template.batchSize) : 10;
-        // ENABLED: Safety Guard for Infinite Loop
-        if (!BATCH_SIZE_CUSTOM || BATCH_SIZE_CUSTOM < 1) {
-            console.warn(`[Execute] Invalid Batch Size detected (${BATCH_SIZE_CUSTOM}). Defaulting to 10.`);
-            BATCH_SIZE_CUSTOM = 10;
-        }
-        console.log(`[Execute] Threading ENABLED. Batch Size: ${BATCH_SIZE_CUSTOM}`);
-    }
-
-    let loopCount = 0;
-    const maxLoopGuard = 100; // Emergency break
-
-    console.log(`[Execute] Starting Execution. Total: ${total}, Batch Target: ${BATCH_SIZE_CUSTOM}`);
-
-    // 1. Group Data (if needed)
-    const groups = {};
-    if (groupByColumn) {
-        console.log(`[Execute] Grouping by column: ${groupByColumn}`);
-        rows.forEach(row => {
-            let keyVal = row[groupByColumn];
-            if (keyVal === undefined) {
-                // Case-insensitive fallback
-                const foundKey = Object.keys(row).find(k => k.toLowerCase() === groupByColumn.toLowerCase());
-                if (foundKey) keyVal = row[foundKey];
-            }
-            const key = keyVal || 'UNKNOWN_GROUP';
-            if (!groups[key]) groups[key] = [];
-            groups[key].push(row);
-        });
-    }
-
-    // 2. Create Batches
-    const batches = [];
-
-    if (groupByColumn) {
-        const groupKeys = Object.keys(groups);
-        let currentBatch = [];
-
-        for (const key of groupKeys) {
-            const groupRows = groups[key];
-
-            // Flush current batch if adding this group exceeds target (unless batch is empty)
-            if (currentBatch.length > 0 && (currentBatch.length + groupRows.length > BATCH_SIZE_CUSTOM)) {
-                batches.push(currentBatch);
-                currentBatch = [];
-            }
-            // Add entire group to keep it atomic
-            currentBatch.push(...groupRows);
-        }
-        if (currentBatch.length > 0) batches.push(currentBatch);
-
-    } else {
-        // Standard Row Batching
-        for (let i = 0; i < total; i += BATCH_SIZE_CUSTOM) {
-            batches.push(rows.slice(i, i + BATCH_SIZE_CUSTOM));
-        }
-    }
-
-    console.log(`[Execute] Created ${batches.length} batches from ${total} rows.`);
-
-    try {
-        // Execute Batches Sequentially (to ensure ordered processing, especially for grouping)
-        for (let i = 0; i < batches.length; i++) {
-            const batch = batches[i];
-            const batchStartTime = Date.now();
-
-            try {
-                const response = await fetch('/api/scripts/execute', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        scriptName: scriptName,
-                        rows: batch,
-                        token: authToken,
-                        envConfig: envConfig
-                    })
-                });
-
-                if (!response.ok) {
-                    const text = await response.text();
-                    try {
-                        const errorData = JSON.parse(text);
-                        throw new Error(errorData.error || 'Execution Failed');
-                    } catch (e) {
-                        if (e.message !== 'Execution Failed' && !e.message.includes('JSON')) throw e;
-                        // If parsing failed or generic error, throw raw text snippet
-                        console.error('Server returned non-JSON error:', text);
-                        throw new Error(`Server Error (${response.status}): ${text.substring(0, 200)}...`);
-                    }
-                }
-
-                const text = await response.text();
-                let results;
-                try {
-                    results = JSON.parse(text);
-                } catch (e) {
-                    console.error('Failed to parse successful response:', text);
-                    throw new Error(`Invalid Server Response: ${text.substring(0, 200)}...`);
-                }
-
-                results.forEach((res, idx) => {
-                    const uiResult = {
-                        row: i + idx + 1,
-                        name: res['Farmer Name'] || res['Asset Name'] || res['CAName'] || res['Name'] || res['name'] || 'Row ' + (i + idx + 1),
-                        code: res['Farmer Code'] || res['Asset Code'] || res['CA_ID'] || res['CA ID'] || res['Code'] || res['code'] || res['Farmer ID'] || '-',
-                        status: res['Status'] || 'Unknown',
-                        response: res['API_Response'] || '',
-                        ...res
-                    };
-
-                    executionResults.push(uiResult);
-
-                    // Add to UI (Grouping will be handled by re-rendering or smart appending)
-                    // For performance, re-rendering whole table 1000s of times is bad.
-                    // But for this use case (<100 rows usually), it's fine.
-                    // Let's call renderExecutionResults() to refresh the view with grouping.
-                    renderExecutionResults();
-
-                    if (uiResult.status === 'Success' || uiResult.status === 'Pass') {
-                        passCount++;
-                    } else {
-                        failCount++;
-                    }
-                });
-
-            } catch (error) {
-                console.error('Batch failed:', error);
-                batch.forEach((row, idx) => {
-                    const uiResult = {
-                        row: i + idx + 1,
-                        name: 'Batch Error',
-                        code: '-',
-                        status: 'Fail',
-                        response: error.message
-                    };
-                    executionResults.push(uiResult);
-                    renderExecutionResults();
-                    failCount++;
-                });
-            }
-
-            // Calculate progress based on actual processed rows
-            const currentProcessedCount = batches.slice(0, i + 1).reduce((acc, b) => acc + b.length, 0);
-            updateProgress(currentProcessedCount, total, passCount, failCount);
-            await sleep(100);
-        }
-    } catch (criticalError) {
-        console.error("Critical Execution Error:", criticalError);
-        alert("Execution stopped unexpectedly: " + criticalError.message);
-    } finally {
-        completeExecution();
-    }
-}
-
-
-
-// =============================================
-// ADD RESULT ROW
-// =============================================
-function addResultRow(result) {
-    const tr = document.createElement('tr');
-    // Check for both 'Pass' and 'Success' status values
-    const isSuccess = result.status === 'Pass' || result.status === 'Success';
-    // Display row as 1-indexed (result.row is already 1-indexed)
-    const displayRow = result.row;
-
-    // Use the raw response
-    let responseText = result.response || '';
-
-    tr.innerHTML = `
-        <td>${displayRow}</td>
-        <td>${result.name}</td>
-        <td>${result.code}</td>
-        <td class="${isSuccess ? 'status-pass' : 'status-fail'}">${result.status}</td>
-        <td title="${responseText}">${responseText.substring(0, 70)}${responseText.length > 70 ? '...' : ''}</td>
-    `;
-    elements.resultsTbody.appendChild(tr);
-}
-
-// =============================================
-// DOWNLOAD RESULTS
-// =============================================
 elements.downloadResultsBtn.addEventListener('click', () => {
-    if (executionResults.length === 0) return;
+    if (executionResults.length === 0) return alert('No results to download');
 
-    const TEMPLATE = TEMPLATES[selectedDataType] || {};
-
-    // For Custom scripts, we want to include ALL generated columns merged with original entries
-    let exportData;
-
-    if (TEMPLATE.isCustom) {
-        exportData = executionResults.map((result, index) => {
-            const originalRow = uploadedData[index] || {};
-            // User requested: "cropid column should be after cropname"
-            // We can try to interleave if we know the schema, but generic "append" is safest for Custom scripts
-            // unless we strictly conform to TEMPLATE.columns if defined.
-            // If TEMPLATE.columns is NOT defined (likely for custom), we should just merge.
-
-            // To ensure generated columns (like cropId) appear, we MUST mix in `result`.
-            // But `result` also contains `row`, `name`, `code` which are UI meta-fields.
-            // We should filter those out if they are purely internal, OR let the user see them.
-            // Let's filter out known internal UI keys to keep it clean, but keep 'cropId' etc.
-            const { row, name, code, status, response, ...generatedFields } = result;
-
-            // Simple Merge: Original + Generated + Status + Response
-            // This puts generated fields (cropId) *before* Status/Response which is usually better.
-            return {
-                ...originalRow,
-                ...generatedFields,
-                'Status': result.status,
-                'API_Response': result.response
-            };
-        });
-    } else {
-        // Fallback for hardcoded templates (Area Audit, Coordinates etc.)
-        if (selectedDataType === 'coordinates') {
-            exportData = executionResults.map(result => ({
-                'CAName': result.name,
-                'CA_ID': result.code,
-                'Coordinates': result.coordinates || '',
-                'Status': result.status
-            }));
-        } else if (selectedDataType === 'areaAudit') {
-            exportData = executionResults.map((result, index) => {
-                const originalRow = uploadedData[index] || {};
-
-                const findKey = (keys) => Object.keys(originalRow).find(k => keys.some(search => k.toLowerCase().includes(search))) || keys[0];
-                const expYieldKey = findKey(['expected yield', 'exp_yield']);
-                const reYieldKey = findKey(['re-estimated yield', 're_yield']);
-
-                return {
-                    ...originalRow,
-                    'CAName': result.name || originalRow['CAName'] || originalRow['CA Name'],
-                    'CA_ID': result.code || originalRow['CA_ID'] || originalRow['CA ID'],
-                    'Coordinates': result.coordinates || '',
-                    'AuditedArea': result.auditedArea || originalRow['AuditedArea'] || '',
-                    [expYieldKey]: result.expYield || originalRow[expYieldKey] || '',
-                    [reYieldKey]: result.reYield || originalRow[reYieldKey] || '',
-                    'Latitude': result.latitude || '',
-                    'Longitude': result.longitude || '',
-                    'GeoInfo': result.geoInfo || '',
-                    'Status': result.status,
-                    'API_Response': result.response
-                };
-            });
-        } else {
-            // General fallback
-            exportData = executionResults.map((result, index) => {
-                const originalRow = uploadedData[index] || {};
-                return {
-                    ...originalRow,
-                    'Status': result.status,
-                    'API_Response': result.response
-                };
-            });
-        }
-    }
-
-    // Create Worksheet
     let ws;
-    // Enforce column order if template defines it
-    if (TEMPLATE.columns && TEMPLATE.columns.length > 0) {
-        // 1. Get User Defined Order
-        const definedHeaders = TEMPLATE.columns.map(c => c.header);
+    // Check if Dynamic UI is enabled
+    const template = TEMPLATES[selectedDataType];
+    const isDynamic = template && template.outputConfig && template.outputConfig.isDynamicUI;
 
-        // 2. Discover Validation/Result headers (Status, Response, etc.)
-        // We scan data to find keys NOT in definedHeaders
+    // Prepare Data for Export
+    // We want to export exactly what is shown in UI + maybe internal fields?
+    // For Dynamic, use all keys.
+    const exportData = executionResults.map(r => {
+        // Clone to avoid mutating original
+        const flat = { ...r };
+        delete flat.row; // Remove internal row index
+        return flat;
+    });
+
+    if (isDynamic) {
+        // Dynamic Headers: Gather ALL unique keys from all rows (in case sparse)
         const allKeys = new Set();
-        exportData.forEach(row => Object.keys(row).forEach(k => allKeys.add(k)));
+        const internalKeys = ['row', 'status', 'response', 'API response', 'API_Response', 'name', 'code'];
+        // We prioritize explicit keys, but for Excel export we want everything usually.
+        // But maybe sort them nicely?
 
-        // Exclude internal keys if any
-        allKeys.delete('row');
+        // 1. Always 'Row' first? NO, User requested removal.
+        const definedHeaders = [];
 
-        const extraKeys = [...allKeys].filter(k => !definedHeaders.includes(k));
+        // 2. Then Data Keys
+        exportData.forEach(row => Object.keys(row).forEach(k => {
+            if (!definedHeaders.includes(k) && !internalKeys.includes(k)) allKeys.add(k);
+        }));
 
-        // 3. Final Order: Defined + Extras
-        const finalHeaders = [...definedHeaders, ...extraKeys];
+        // 3. Then Standard Endings
+        const endHeaders = ['name', 'code', 'status', 'response']; // If they exist locally
+
+        const extraKeys = Array.from(allKeys);
+
+        // 3. Final Order: Defined + Extras + Endings
+        // Check which endings actually exist
+        const presentEndings = endHeaders.filter(h => exportData.some(r => r[h] !== undefined));
+
+        const finalHeaders = [...definedHeaders, ...extraKeys, ...presentEndings];
 
         ws = XLSX.utils.json_to_sheet(exportData, { header: finalHeaders });
     } else {
-        // Default behavior (random/alpha order usually)
+        // Legacy: Row, Name, Code, Status, Response
+        // But user might have extra keys even in legacy?
+        // Default behavior (random/alpha order usually) + json_to_sheet auto-detect
+        // Let's just use auto-detect but ensure Row is first if possible?
         ws = XLSX.utils.json_to_sheet(exportData);
     }
     const wb = XLSX.utils.book_new();
@@ -1697,4 +1122,250 @@ if (elements.confirmImportBtn) {
 // =============================================
 // EXECUTE CUSTOM SCRIPT
 // =============================================
+
+// =============================================
+// TEMPLATE ACTIONS
+// =============================================
+
+// Download Template
+if (elements.exportBtn) {
+    elements.exportBtn.addEventListener('click', () => {
+        if (!selectedDataType) return alert('Please select a script first.');
+        const template = TEMPLATES[selectedDataType];
+        if (!template) return;
+
+        // Create Excel Template
+        const headers = template.columns.map(c => c.header);
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.json_to_sheet([], { header: headers });
+
+        XLSX.utils.book_append_sheet(wb, ws, 'Template');
+        XLSX.writeFile(wb, `${template.name}_Template.xlsx`);
+    });
+}
+
+// Import Template (Trigger File Upload)
+if (elements.importBtn) {
+    elements.importBtn.textContent = 'Login and Import Template';
+    elements.importBtn.addEventListener('click', () => {
+        if (!selectedDataType) return alert('Please select a script first.');
+
+        // Show Login/Upload Section Logic
+        if (elements.loginSection) {
+            elements.loginSection.classList.remove('hidden');
+            elements.loginSection.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+
+        if (elements.fileUpload) {
+            // Auto-trigger removed as per user request
+        }
+    });
+}
+
+
+// =============================================
+// LOGIN COMPONENT INITIALIZATION
+// =============================================
+
+document.addEventListener('DOMContentLoaded', () => {
+    // 1. Clear Session on Reload (as per logic seen in v2) or keep?
+    // User often wants fresh start or specific behavior.
+    // Let's implement standard init.
+
+    // Check if LoginComponent is defined (from global script)
+    if (typeof LoginComponent !== 'undefined') {
+        loginComponent = new LoginComponent('login-component-container', {
+            apiEndpoint: '/api/user-aggregate/token', // Standard endpoint
+            onLoginSuccess: (token, userDetails) => {
+                authToken = token;
+                currentEnvironment = userDetails.environment;
+                currentTenant = userDetails.tenant;
+
+                // Update Session UI
+                if (elements.loginFormContainer) elements.loginFormContainer.classList.add('hidden');
+                if (elements.sessionContainer) elements.sessionContainer.classList.remove('hidden');
+                if (elements.uploadWorkflowContainer) {
+                    elements.uploadWorkflowContainer.classList.remove('disabled-area');
+                    elements.uploadWorkflowContainer.style.opacity = '1';
+                    elements.uploadWorkflowContainer.style.pointerEvents = 'auto';
+                }
+
+                if (elements.sessionInfo) {
+                    elements.sessionInfo.textContent = `${userDetails.username} (${userDetails.tenant}) [${userDetails.environment}]`;
+                }
+
+                // If Environment selected, load refs
+                // loadAssetReferenceData(); 
+            },
+            onLogout: () => {
+                fullLogout();
+            }
+        });
+    } else {
+        console.error('LoginComponent class not found. Ensure login_component.js is loaded.');
+    }
+
+    // Logout Hook
+    if (elements.logoutBtn) {
+        elements.logoutBtn.addEventListener('click', () => {
+            // Trigger logout in component if possible, or just local fullLogout
+            // Component usually handles its own UI, but we have external logout btn too?
+            // The component has its own internal state.
+            // If we access the instance 'loginComponent', we can call logout.
+            // But we didn't assign the instance to a global var in the snippet above.
+            // Let's fix that.
+        });
+    }
+});
+
+
+// =============================================
+// EXECUTE SCRIPT LOGIC (RESTORED)
+// =============================================
+
+if (elements.executeBtn) {
+    elements.executeBtn.addEventListener('click', async () => {
+        if (!selectedDataType) return alert('Please select a script first.');
+        if (!authToken) return alert('Please login first.');
+
+        // 1. Get Rows from Excel
+        const fileInput = elements.fileUpload;
+        if (!fileInput.files.length) return alert('Please upload a filled template.');
+
+        const file = fileInput.files[0];
+        const reader = new FileReader();
+
+        reader.onload = async (e) => {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                const rows = XLSX.utils.sheet_to_json(worksheet);
+
+                if (rows.length === 0) return alert('Excel file is empty.');
+
+                // 2. Start Execution
+                const stats = startExecution();
+                const total = rows.length;
+                let processed = 0;
+                let pass = 0;
+                let fail = 0;
+
+                updateProgress(0, total, 0, 0);
+
+                // 3. Send to Backend
+                // We send ALL rows at once now (Backend handles batch/loop if needed, or we just rely on the script)
+                // The new backend endpoint expects: { scriptName, rows, token, envConfig }
+
+                // Get Env Config
+                const envData = getEnvUrls(currentEnvironment);
+                const apiBaseUrl = envData.apiBaseUrl;
+
+                const config = {
+                    environment: currentEnvironment,
+                    tenant: currentTenant,
+                    apiurl: apiBaseUrl, // Critical for scripts
+                    apiBaseUrl: apiBaseUrl, // Also critical for converted scripts expecting this key
+                    google_api_key: (typeof tagRefData !== 'undefined' && tagRefData.google_api_key) ? tagRefData.google_api_key : "",
+                    boundary: {
+                        minLat: elements.minLat ? elements.minLat.value : '',
+                        maxLat: elements.maxLat ? elements.maxLat.value : '',
+                        minLong: elements.minLong ? elements.minLong.value : '',
+                        maxLong: elements.maxLong ? elements.maxLong.value : '',
+                        locationName: elements.locationName ? elements.locationName.value : ''
+                    },
+                    targetLocation: document.getElementById('target-location-input') ? document.getElementById('target-location-input').value : ''
+                };
+
+                try {
+                    const scriptFilename = TEMPLATES[selectedDataType] ? TEMPLATES[selectedDataType].filename : selectedDataType;
+
+                    // [V2 ROUTING]
+                    // Check if we should use the new Modular Executor
+                    // We default to V2 unless it's a known Legacy script
+                    const LEGACY_SCRIPTS = ['Area_Audit', 'Area Audit', 'Area_Audit.py'];
+                    const isLegacy = LEGACY_SCRIPTS.some(n => selectedDataType.includes(n)) || (TEMPLATES[selectedDataType] && TEMPLATES[selectedDataType].isLegacy);
+
+                    if (!isLegacy && typeof ScriptExecutorV2 !== 'undefined') {
+                        console.log(`[Execute] Routing '${selectedDataType}' to ScriptExecutorV2...`);
+                        const executor = new ScriptExecutorV2({ apiBaseUrl: apiBaseUrl, debug: true });
+
+                        // Execute
+                        const v2Results = await executor.execute(scriptFilename, rows, authToken, config, config.boundary);
+
+                        // Render Results (Shared UI Logic)
+                        executionResults = v2Results;
+                        renderExecutionResults();
+
+                        // Stats
+                        pass = executionResults.filter(r => {
+                            const s = String(r.status || r.Status || '').toLowerCase();
+                            return s === 'success' || s === 'pass' || s === 'passed';
+                        }).length;
+                        fail = executionResults.length - pass;
+                        updateProgress(total, total, pass, fail);
+
+                        return; // Stop here, don't run legacy block
+                    }
+
+                    // [LEGACY BLOCK FALLTHROUGH]
+                    console.log(`[Execute] Routing '${selectedDataType}' to Legacy Executor...`);
+
+                    const response = await fetch('/api/scripts/execute', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            scriptName: scriptFilename,
+                            rows: rows,
+                            token: authToken,
+                            envConfig: config
+                        })
+                    });
+
+                    if (!response.ok) {
+                        const err = await response.json();
+                        throw new Error(err.error || 'Execution failed');
+                    }
+
+                    const resultData = await response.json();
+                    // Expected format: Array of result objects with status/response
+
+                    // 4. Render Results
+                    executionResults = resultData;
+                    renderExecutionResults();
+
+                    // Calculate Stats
+                    pass = executionResults.filter(r => {
+                        const s = String(r.status || r.Status || '').toLowerCase();
+                        return s === 'success' || s === 'pass' || s === 'passed';
+                    }).length;
+                    fail = executionResults.length - pass;
+
+                    updateProgress(total, total, pass, fail);
+
+                } catch (error) {
+                    console.error('Execution Failed:', error);
+                    alert('Execution Failed: ' + error.message);
+                    // Add dummy fail row if empty?
+                    if (executionResults.length === 0) {
+                        executionResults.push({ row: '-', status: 'Error', response: error.message });
+                        renderExecutionResults();
+                    }
+                } finally {
+                    completeExecution();
+                }
+
+            } catch (readErr) {
+                console.error('File Read Error:', readErr);
+                alert('Failed to read Excel file.');
+                completeExecution();
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+
+
 

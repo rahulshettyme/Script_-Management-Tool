@@ -1,0 +1,817 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Script Onboarding | Data Generate</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="components/login_component.css">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <style>
+        .split-container {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+            max-width: 1000px;
+            margin: 40px auto 0 auto;
+        }
+
+        .section-left,
+        .section-right {
+            display: contents;
+        }
+
+        .editor-container textarea {
+            width: 100%;
+            height: 400px;
+            background: #1e293b;
+            color: #d1d5db;
+            font-family: 'Consolas', 'Monaco', monospace;
+            padding: 1rem;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            resize: vertical;
+            box-sizing: border-box;
+            /* Fix overflow */
+        }
+
+        .log-viewer {
+            background: #000;
+            color: #0f0;
+            font-family: 'Consolas', monospace;
+            padding: 1rem;
+            height: 300px;
+            overflow-y: auto;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            border: 1px solid #334155;
+            white-space: pre-wrap;
+        }
+
+        .analysis-card {
+            background: rgba(30, 41, 59, 0.4);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-bottom: 1rem;
+        }
+
+        .step-list {
+            list-style-type: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .step-list li {
+            padding: 0.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .step-tag {
+            background: var(--primary-color);
+            color: white;
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            font-weight: bold;
+        }
+
+        .column-tag {
+            display: inline-block;
+            background: rgba(16, 185, 129, 0.2);
+            border: 1px solid #10b981;
+            color: #10b981;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            margin: 2px;
+        }
+
+        .auth-warning {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid #ef4444;
+            color: #fca5a5;
+            padding: 1rem;
+            border-radius: 8px;
+            text-align: center;
+            display: none;
+            margin-bottom: 1rem;
+        }
+
+        .auth-warning {
+            background: rgba(239, 68, 68, 0.2);
+            border: 1px solid #ef4444;
+            color: #fca5a5;
+            padding: 1rem;
+            border-radius: 8px;
+            text-align: center;
+            display: none;
+            margin-bottom: 1rem;
+        }
+
+        /* Modal Styles */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background: #1e293b;
+            border: 1px solid #475569;
+            border-radius: 8px;
+            width: 80%;
+            max-width: 900px;
+            height: 80vh;
+            display: flex;
+            flex-direction: column;
+            padding: 1rem;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Fix for expanding select in flex containers */
+        select {
+            /* Ensure select does not overflow flex parents */
+            min-width: 0;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid #334155;
+            padding-bottom: 0.5rem;
+        }
+
+        .modal-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .modal-body textarea {
+            flex: 1;
+            background: #0f172a;
+            color: #e2e8f0;
+            font-family: 'Consolas', monospace;
+            padding: 1rem;
+            border: 1px solid #334155;
+            border-radius: 4px;
+            resize: none;
+        }
+
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+            margin-top: 1rem;
+            border-top: 1px solid #334155;
+            padding-top: 0.5rem;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container" style="max-width: 1400px; margin-top: 2rem; margin-bottom: 2rem;">
+        <header style="display: flex; gap: 1rem; align-items: center; margin-bottom: 2rem;">
+            <button onclick="location.href='script_dashboard.html'" class="btn-secondary"
+                style="padding: 0.5rem 1rem; font-size: 0.9rem; flex: 0 0 auto;">&larr; Back to Hub</button>
+            <div>
+                <h1 style="margin:0; text-align: left; font-size: 2rem;">Script Onboarding Center</h1>
+                <span
+                    style="color: var(--text-secondary); font-size: 1rem; letter-spacing: 0.05em; text-transform: uppercase;">Create
+                    or Edit Script</span>
+                <!-- NGROK / TEMP BASE URL ENTRY -->
+                <input type="text" id="tempBaseUrl" placeholder="Host URL (e.g. https://...ngrok-free.app)"
+                    title="Enter base URL for Auth (if running via Tunnel)"
+                    style="background: #0f172a; border: 1px solid #334155; color: #64748b; padding: 4px 8px; border-radius: 4px; font-size: 0.8rem; width: 250px; margin-left: 20px;">
+            </div>
+        </header>
+
+        <div class="split-container">
+
+
+            <!-- Left: Input & Editor -->
+            <div class="section-left">
+                <div class="form-section"
+                    style="text-align: left; margin-bottom: 1rem; padding: 1.25rem; position: relative; overflow: hidden;">
+                    <!-- Decorative Background -->
+                    <div
+                        style="position: absolute; top: 0; left: 0; width: 100%; height: 4px; background: linear-gradient(90deg, #3b82f6, #8b5cf6, #ec4899);">
+                    </div>
+
+                    <div
+                        style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 1.5rem;">
+                        <div>
+                            <h2 style="margin-top: 0; margin-bottom: 0.5rem; font-size: 1.5rem;">Reference & Design</h2>
+                            <p style="margin: 0; color: var(--text-secondary); font-size: 0.9rem;">Define your script
+                                logic steps below or load an existing one.</p>
+                        </div>
+                        <div style="display: flex; gap: 0.75rem;">
+                            <button class="btn-secondary" onclick="openLoadModal()"
+                                style="border: 1px solid #334155; background: #1e293b; color: #94a3b8;">
+                                📂 Load Existing
+                            </button>
+                            <button class="btn-primary" onclick="openPasteModal()"
+                                style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%); border: none; box-shadow: 0 4px 6px -1px rgba(139, 92, 246, 0.3);">
+                                📋 Paste Code
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label style="color: #e2e8f0; font-weight: 500;">Script Name</label>
+                        <input type="text" id="scriptName" placeholder="e.g. Create Farmer v2"
+                            style="background: #0f172a; border: 1px solid #334155; padding: 0.75rem; border-radius: 6px; color: white; width: 100%;">
+                    </div>
+
+                    <div class="form-group">
+                        <label style="color: #e2e8f0; font-weight: 500;">Script Description <span
+                                style="font-weight: 400; color: #64748b; font-size: 0.85rem;">(Optional)</span></label>
+                        <textarea id="scriptDescription" rows="3"
+                            placeholder="Enter a brief description of what this script does..."
+                            style="background: #0f172a; border: 1px solid #334155; padding: 0.75rem; border-radius: 6px; color: white; width: 100%; resize: vertical; font-family: inherit; font-size: 0.9rem;"></textarea>
+                    </div>
+
+                    <div class="form-group"
+                        style="margin-bottom: 1.5rem; display: flex; gap: 2rem; align-items: center;">
+                        <label class="switch" style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="allowAdditionalAttributes">
+                            <span style="font-size: 0.9rem; color: #94a3b8; margin-left: 0.75rem;">Allow Additional
+                                Attributes</span>
+                        </label>
+
+                        <label class="switch" style="display: flex; align-items: center; cursor: pointer;">
+                            <input type="checkbox" id="enableGeofencing" onchange="toggleGeofence(this)">
+                            <span style="font-size: 0.9rem; color: #94a3b8; margin-left: 0.75rem;">Enable Dynamic
+                                Geofencing 🌍</span>
+                        </label>
+
+                        <!-- MOVED: Multithreading Option -->
+                        <div style="display: flex; gap: 1rem; align-items: center;">
+                            <label class="switch" style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" id="isMultithreaded" checked onchange="toggleThreadSize(this)">
+                                <span style="font-size: 0.9rem; color: #cbd5e1; margin-left: 0.75rem;">
+                                    Enable Multithreading 🚀
+                                </span>
+                            </label>
+
+                            <div id="threadSizeContainer" style="display: flex; align-items: center; gap: 0.5rem;">
+                                <label style="color: #64748b; font-size: 0.85rem;">Batch Size:</label>
+                                <select id="threadSize"
+                                    style="background: #0f172a; color: #cbd5e1; border: 1px solid #334155; padding: 2px 8px; border-radius: 4px;">
+                                    <option value="5">5</option>
+                                    <option value="10" selected>10</option>
+                                    <option value="20">20</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 2rem;">
+                        <label style="color: #e2e8f0; font-weight: 500;">Group Execution By (Optional)</label>
+                        <input type="text" id="groupByColumn" placeholder="e.g. name (Column to group rows by)"
+                            style="background: #0f172a; border: 1px solid #334155; padding: 0.75rem; border-radius: 6px; color: white; width: 100%;">
+                        <small style="color: #64748b; font-size: 0.8rem;">Enter the column name to group rows by (for
+                            sequential processing of related rows).</small>
+                    </div>
+
+
+
+                    <!-- Steps Definition Section (Always Visible) -->
+                    <div id="descGroup">
+                        <div class="form-group" style="margin-bottom: 1.5rem;">
+                            <label
+                                style="font-size: 0.9rem; color: #e2e8f0; margin-bottom: 0.5rem; display: block;">Excel
+                                Input Columns <span style="color: #64748b;">(comma separated)</span></label>
+                            <input type="text" id="globalInputColumns"
+                                placeholder="e.g. Farmer Name, Mobile, Village Code"
+                                style="width: 100%; padding: 0.75rem; background: #0f172a; color: white; border: 1px solid #334155; border-radius: 6px;">
+                        </div>
+
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                            <label style="margin-bottom: 0; color: #e2e8f0; font-weight: 500;">Execution Steps</label>
+                            <div style="display: flex; gap: 0.5rem;">
+
+                                <button type="button" class="btn-secondary" onclick="addStep('API')"
+                                    style="padding: 0.4rem 0.8rem; font-size: 0.8rem; background: rgba(56, 189, 248, 0.1); color: #7dd3fc; border: 1px solid #0ea5e9;">
+                                    + Add API
+                                </button>
+                                <button type="button" class="btn-secondary" onclick="addStep('LOGIC')"
+                                    style="padding: 0.4rem 0.8rem; font-size: 0.8rem; background: rgba(234, 179, 8, 0.1); color: #fde047; border: 1px solid #eab308;">
+                                    + Add Logic
+                                </button>
+                                <button type="button" class="btn-secondary" onclick="openAddScriptModal()"
+                                    style="padding: 0.4rem 0.8rem; font-size: 0.8rem; background: rgba(245, 158, 11, 0.1); color: #f59e0b; border: 1px solid #f59e0b;">
+                                    + Add Script
+                                </button>
+                            </div>
+                        </div>
+
+                        <div id="stepsContainer"
+                            style="margin-bottom: 1.5rem; border: 1px solid #334155; padding: 1rem; border-radius: 8px; background: #0f172a; min-height: 120px;">
+                            <div
+                                style="text-align: center; color: #64748b; padding: 30px; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%;">
+                                <div style="font-size: 2rem; opacity: 0.2; margin-bottom: 10px;">🔨</div>
+                                <div>No steps defined</div>
+                                <div style="font-size: 0.8rem; margin-top: 5px;">Use buttons above or AI Auto-Steps
+                                </div>
+                            </div>
+                        </div>
+
+
+                        <!-- Output Config Trigger (Relocated) -->
+                        <div style="margin-bottom: 1.5rem;">
+                            <button onclick="openOutputConfigModal()"
+                                style="width: 100%; background: #1e293b; border: 1px solid #6366f1; color: #e2e8f0; padding: 12px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; justify-content: space-between; transition: all 0.2s; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);"
+                                onmouseover="this.style.borderColor='#818cf8'; this.style.boxShadow='0 10px 15px -3px rgba(99, 102, 241, 0.2)';"
+                                onmouseout="this.style.borderColor='#6366f1'; this.style.boxShadow='0 4px 6px -1px rgba(0, 0, 0, 0.1)';">
+                                <span style="display: flex; align-items: center; gap: 10px; font-weight: 500;">
+                                    <span
+                                        style="background: rgba(99, 102, 241, 0.2); padding: 5px; border-radius: 4px; font-size: 1.1rem;">⚙️</span>
+                                    Configure Output Mapping
+                                </span>
+                                <span style="color: #94a3b8; font-size: 0.85rem;">UI & Excel Definition &rarr;</span>
+                            </button>
+                        </div>
+
+
+                    </div>
+
+                    <!-- Code Editor Section (Always Present but Collapsed/Hidden usually handled by js?) -->
+                    <!-- Changing logic: Always show the "View Code" logic but maybe visually separated -->
+                    <!-- Unified Action Bar (Grid Layout - Flush Alignment) -->
+                    <div id="editorActionToolbar"
+                        style="display: grid !important; grid-template-columns: auto auto !important; justify-content: space-between !important; align-items: center !important; width: 100% !important; margin-top: 1rem; margin-bottom: 2rem;">
+
+                        <!-- Left: View Code -->
+                        <button class="btn-secondary" onclick="openCodeModal()"
+                            style="width: auto !important; display: inline-flex !important; align-items: center; gap: 8px; border: 1px solid #475569; color: #94a3b8; background: transparent; padding: 10px 16px; margin: 0 !important;">
+                            <span
+                                style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 5px #10b981;"></span>
+                            View Code
+                        </button>
+
+                        <!-- Right: Generate Script -->
+                        <button class="btn-primary" onclick="generateScriptFromSteps()"
+                            style="width: auto !important; display: inline-flex !important; align-items: center; gap: 8px; background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); padding: 12px 24px; font-size: 1rem; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.4); border:none; margin: 0 !important;">
+                            <span>✨</span> Generate Script
+                        </button>
+
+                        <!-- Hidden Code Storage -->
+                        <textarea id="pythonCode" style="display: none;"></textarea>
+                    </div>
+
+                    <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                        <button class="btn-secondary" onclick="analyzeScript()"
+                            style="flex: 1; background: #334155; border: 1px solid #475569; font-size: 0.9rem;">
+                            Sync Steps from Code ⚡
+                        </button>
+                        <button id="proceedBtn" class="btn-primary" onclick="proceedToTest()"
+                            style="flex: 2; background: linear-gradient(135deg, #eab308 0%, #ca8a04 100%); display:none;">
+                            Proceed to Test ➡️
+                        </button>
+                    </div>
+                </div>
+
+
+            </div>
+
+            <!-- Right: Analysis (Keep mostly same) -->
+            <div class="section-right">
+
+                <div id="analysisSection" class="stat-card" style="text-align: left;">
+                    <h2>2. ANALYSIS</h2>
+
+                    <div id="analysisSteps"
+                        style="margin-top:10px; min-height: 100px; max-height: 600px; overflow-y: auto;">
+                        <span style="color: #64748b;">No analysis yet...</span>
+                    </div>
+
+                    <div style="margin-top: 15px; border-top: 1px solid #334155; padding-top: 10px;">
+                        <div class="form-group" style="margin-bottom: 12px;">
+                            <label style="font-size:0.9em; color:#94a3b8;">Detected Expected Excel Columns</label>
+                            <input type="text" id="detectedColumnsDisplay" readonly
+                                style="width: 100%; padding: 8px; background: #334155; color: #94a3b8; border: 1px solid #475569; border-radius: 4px; margin-top:5px; cursor: not-allowed;">
+                        </div>
+
+                        <div class="form-group" style="margin-bottom: 15px;">
+                            <label style="font-size:0.9em; color:#94a3b8;">Detected Expected UI Columns</label>
+                            <input type="text" id="detectedUIColumnsDisplay" readonly
+                                style="width: 100%; padding: 8px; background: #334155; color: #94a3b8; border: 1px solid #475569; border-radius: 4px; margin-top:5px; cursor: not-allowed;">
+                        </div>
+
+                        <!-- Manual Columns override removed as per user request (Auto-detected is now source of truth) -->
+                        <input type="hidden" id="manualColumns">
+                        <button id="downloadTemplateBtn" class="btn-primary" onclick="downloadTemplate()"
+                            style="width: 100%; background: #3b82f6; margin-top: 5px;">Download Template 📥</button>
+                    </div>
+                </div>
+
+                <!-- Debug / Test Sandbox (Moved to Right Column) -->
+                <div id="testSection" class="form-section"
+                    style="text-align: left; opacity: 0.5; pointer-events: none; padding: 1.25rem;">
+                    <h2 style="margin-top: 0;">3. DEBUG & TEST</h2>
+
+                    <style>
+                        /* Mock Result Table Styles (Ported from createbulkdata.html) */
+                        .results-table {
+                            width: 100%;
+                            border-collapse: collapse;
+                            margin-top: 1rem;
+                            font-size: 0.85rem;
+                        }
+
+                        .results-table th {
+                            background: #1e293b;
+                            padding: 0.75rem;
+                            text-align: left;
+                            font-weight: 500;
+                            color: #94a3b8;
+                            border-bottom: 1px solid #334155;
+                        }
+
+                        .results-table td {
+                            padding: 0.75rem;
+                            border-bottom: 1px solid #334155;
+                            color: #e2e8f0;
+                        }
+
+                        .results-stats {
+                            display: flex;
+                            gap: 1rem;
+                            margin-bottom: 10px;
+                            background: #0f172a;
+                            padding: 10px;
+                            border-radius: 6px;
+                            border: 1px solid #334155;
+                        }
+
+                        .stat-item {
+                            display: flex;
+                            align-items: center;
+                            gap: 5px;
+                            font-size: 0.85rem;
+                        }
+
+                        .status-pass {
+                            color: #10b981;
+                            font-weight: bold;
+                        }
+
+                        .status-fail {
+                            color: #ef4444;
+                            font-weight: bold;
+                        }
+                    </style>
+
+                    <div class="form-group">
+                        <label>Upload Test Data (Excel)</label>
+                        <input type="file" id="testFile" accept=".xlsx, .xls, .csv">
+                    </div>
+
+                    <!-- Dynamic Geofence Input -->
+                    <div id="geofenceContainer" class="form-group"
+                        style="display:none; margin-top: 1rem; padding: 1rem; background: rgba(99, 102, 241, 0.1); border: 1px solid #4f46e5; border-radius: 6px;">
+                        <label
+                            style="color: #818cf8; font-weight: 500; font-size: 0.85rem; display: flex; align-items: center; gap: 5px;">
+                            🌍 Target Location for Geofencing
+                        </label>
+                        <input type="text" id="targetLocation" placeholder="e.g. India, Karnataka, Haveri"
+                            style="width:100%; margin-top: 5px; background: #0f172a; border: 1px solid #4f46e5; color: white; padding: 8px; border-radius: 4px;">
+                        <small style="color: #94a3b8; font-size: 0.75rem; margin-top: 4px; display: block;">
+                            The script will verify if coordinates are within this region using Google Maps.
+                        </small>
+                    </div>
+
+                    <div id="login-container"></div>
+                    <div id="loginStatusBadge" style="display:none;"></div>
+
+                    <div class="actions-row">
+                        <button class="btn-secondary action-btn-main" onclick="runTest()">Run Debug Trace 🐞</button>
+                        <button id="downloadOutputBtn" class="btn-primary action-btn-sub" onclick="downloadTestOutput()"
+                            style="background: #0ea5e9; display:none;">Download Output 📥</button>
+                        <button class="btn-primary action-btn-sub" onclick="copyTraceLogs()"
+                            style="background: #475569;">Copy Logs 📋</button>
+                    </div>
+
+                    <!-- MOCK RESULT PREVIEW (New) -->
+                    <div id="mockResultSection" style="margin-top: 1rem; display:none;">
+                        <h4 style="margin: 0 0 10px 0; color: #94a3b8; font-size: 0.9rem;">Test Execution Results
+                            (Preview)</h4>
+
+                        <!-- Mini Stats -->
+                        <div class="results-stats">
+                            <div class="stat-item"><span style="color:#94a3b8">Pass:</span> <strong id="mockPass"
+                                    style="color:#10b981">0</strong></div>
+                            <div class="stat-item"><span style="color:#94a3b8">Fail:</span> <strong id="mockFail"
+                                    style="color:#ef4444">0</strong></div>
+                        </div>
+
+                        <!-- Mini Table -->
+                        <div
+                            style="max-height: 200px; overflow-y: auto; border: 1px solid #334155; border-radius: 6px;">
+                            <table class="results-table">
+                                <table class="results-table">
+                                    <thead id="mockResultsHead">
+                                        <tr>
+                                            <th>Row</th>
+                                            <th>Status</th>
+                                            <!-- Dynamic Columns will be injected here -->
+                                        </tr>
+                                    </thead>
+                                    <tbody id="mockResultsBody"></tbody>
+                                </table>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- DEBUG TIMELINE -->
+                    <div id="debugTimeline"
+                        style="margin-top: 1rem; background: #0f172a; padding: 1rem; border-radius: 8px; height: 300px; overflow-y: auto; border: 1px solid #334155;">
+                        <div style="color: grey; text-align: center; padding-top: 130px;">Run test to see live execution
+                            trace...</div>
+                    </div>
+                </div>
+
+                <!-- Review Section (Correctly Placed Below Analysis) -->
+                <div id="reviewSection" class="form-section" style="text-align: left; padding: 1.25rem;">
+                    <h3>4. REVIEW & FINALIZE</h3>
+                    <div style="margin-top: 1rem;">
+                        <label style="font-size:0.9em; color:#94a3b8; display:block; margin-bottom:5px;">Review Comments
+                            / Error Details</label>
+                        <textarea id="reviewComments"
+                            style="width:100%; height: 300px; background:#1e293b; color:white; border:1px solid #334155; padding: 10px; border-radius: 6px; font-family: inherit; resize: vertical;"
+                            placeholder="e.g. 'The indentation is wrong on line 45' or 'Use column Name instead of Farmer Name'"></textarea>
+
+                        <div style="display: flex; gap: 10px; margin-top: 15px;">
+                            <button id="aiUpdateBtn" class="btn-secondary" onclick="saveFeedbackContext()"
+                                style="background: #8b5cf6; flex: 2;">✨ Update Script (AI)</button>
+
+                            <button id="registerScriptBtn" class="btn-primary" style="background: #10b981; flex: 1;"
+                                onclick="importScript()">Register Script
+                                ✅</button>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    </div>
+
+
+
+    </div>
+
+
+
+
+    </div>
+
+    <!-- PASTE CODE MODAL -->
+    <div id="pasteModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 style="margin:0;">Import / Paste Code</h3>
+                <button onclick="closePasteModal()"
+                    style="background:none; border:none; color: #94a3b8; cursor: pointer; font-size: 1.5rem;">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p style="color: #94a3b8; font-size: 0.9rem; margin-top: 0;">Paste your existing Python scripts here to
+                    reverse-engineer steps.</p>
+                <textarea id="pasteCodeEditor" placeholder="# Paste python code here..."
+                    style="width: 100%; flex: 1; background: #0f172a; color: #e2e8f0; border: 1px solid #334155; padding: 1rem; font-family: monospace; resize: none; border-radius: 6px;"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closePasteModal()">Cancel</button>
+                <button id="btnLoadReverse" class="btn-primary" onclick="handlePasteCode()"
+                    style="background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);">
+                    ⬇️ Import & Reverse (AI)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LOAD SCRIPT MODAL -->
+    <div id="loadScriptModal" class="modal-overlay">
+        <div class="modal-content" style="height: 80vh; max-height: 800px; display:flex; flex-direction:column;">
+            <div class="modal-header">
+                <h3 style="margin:0;">Load Existing Script</h3>
+                <button onclick="closeLoadModal()"
+                    style="background:none; border:none; color: #94a3b8; cursor: pointer; font-size: 1.5rem;">&times;</button>
+            </div>
+
+            <div class="modal-body"
+                style="padding: 1rem; flex: 1; overflow: hidden; display: flex; flex-direction: column;">
+                <input type="text" id="scriptSearch" placeholder="🔍 Search scripts..." onkeyup="filterScriptList()"
+                    style="width: 100%; padding: 10px; margin-bottom: 1rem; background: #0f172a; border: 1px solid #334155; color: white; border-radius: 6px;">
+
+                <div id="scriptListContainer"
+                    style="flex: 1; overflow-y: auto; border: 1px solid #334155; border-radius: 6px; background: #0f172a;">
+                    <!-- Items injected here -->
+                    <div style="padding: 20px; text-align: center; color: #64748b;">Loading...</div>
+                </div>
+            </div>
+
+            <div class="modal-footer" style="margin-top: 0;">
+                <button class="btn-secondary" onclick="closeLoadModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ADD HELPER SCRIPT MODAL -->
+    <div id="addScriptModal" class="modal-overlay">
+        <div class="modal-content" style="height: 80vh; max-height: 800px; display:flex; flex-direction:column;">
+            <div class="modal-header">
+                <h3 style="margin:0;">Add Dependent Script</h3>
+                <button onclick="closeAddScriptModal()"
+                    style="background:none; border:none; color: #94a3b8; cursor: pointer; font-size: 1.5rem;">&times;</button>
+            </div>
+
+            <div class="modal-body"
+                style="padding: 1rem; flex: 1; overflow: hidden; display: flex; flex-direction: column;">
+                <p style="color: #94a3b8; margin-top: 0; font-size: 0.9rem;">Select a reusable script to call as a step.
+                </p>
+                <div id="helperScriptListContainer"
+                    style="flex: 1; overflow-y: auto; border: 1px solid #334155; border-radius: 6px; background: #0f172a;">
+                    <!-- Items injected here -->
+                    <div style="padding: 20px; text-align: center; color: #64748b;">Loading...</div>
+                </div>
+            </div>
+
+            <div class="modal-footer" style="margin-top: 0;">
+                <button class="btn-secondary" onclick="closeAddScriptModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CODE EDITOR MODAL -->
+    <div id="codeModal" class="modal-overlay">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 style="margin:0;">Python Script Editor</h3>
+                <button onclick="closeCodeModal()"
+                    style="background:none; border:none; color: #94a3b8; cursor: pointer; font-size: 1.5rem;">&times;</button>
+            </div>
+            <div class="modal-body">
+                <textarea id="modalCodeEditor" spellcheck="false"></textarea>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeCodeModal()">Cancel</button>
+                <button class="btn-primary" onclick="saveCodeModal()">Save & Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="components/login_component.js?v=3"></script>
+    <script src="components/login_component.js?v=4"></script>
+    <script src="script_management_v2.js"></script>
+</body>
+
+</html><!-- CONFIRMATION MODAL -->
+<div id="confirmModal" class="modal-overlay" style="z-index: 2000;">
+    <div class="modal-content" style="width: 400px; height: auto; max-width: 90%;">
+        <div class="modal-header">
+            <h3 style="margin:0; color: #facc15;">⚠️ Warning</h3>
+        </div>
+        <div class="modal-body" style="padding: 1rem 0;">
+            <p style="color: #e2e8f0; margin-bottom: 20px;">Switching modes will clear your current work (code,
+                analysis, debug logs).</p>
+            <p style="color: #cbd5e1; font-size: 0.9em;">Are you sure you want to proceed?</p>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-secondary" onclick="closeConfirmModal(false)"
+                style="background: #334155;">Cancel</button>
+            <button class="btn-primary" onclick="closeConfirmModal(true)" style="background: #ef4444;">Yes, Clear &
+                Switch</button>
+        </div>
+    </div>
+</div>
+
+<!-- OUTPUT CONFIG MODAL -->
+<div id="outputConfigModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 1000px; height: 85vh;">
+        <div class="modal-header">
+            <h3 style="margin:0; color: #a78bfa;">⚙️ Output Mapping Configuration</h3>
+            <button onclick="closeOutputConfigModal()"
+                style="background:none; border:none; color: #94a3b8; cursor: pointer; font-size: 1.5rem;">&times;</button>
+        </div>
+        <div class="modal-body" style="padding: 0; display: flex; flex-direction: column;">
+
+            <!-- TABS -->
+            <div style="display: flex; border-bottom: 1px solid #334155; background: #0f172a;">
+                <button class="tab-btn active" onclick="switchOutputTab('ui')" id="tabBtn-ui"
+                    style="flex:1; padding: 1rem; background: none; border: none; color: white; border-bottom: 2px solid #a78bfa; cursor: pointer;">🖥️
+                    UI Output</button>
+                <button class="tab-btn" onclick="switchOutputTab('excel')" id="tabBtn-excel"
+                    style="flex:1; padding: 1rem; background: none; border: none; color: #64748b; border-bottom: 2px solid transparent; cursor: pointer;">📊
+                    Excel Output</button>
+            </div>
+
+            <!-- TAB CONTENT -->
+            <div style="padding: 1.5rem; flex: 1; overflow-y: auto; background: #1e293b;">
+
+                <!-- UI OUTPUT TAB -->
+                <div id="tabContent-ui">
+                    <div
+                        style="background: rgba(148, 163, 184, 0.1); padding: 1rem; border-radius: 6px; margin-bottom: 1.5rem;">
+                        <h4 style="margin-top:0; color: #e2e8f0;">Predefined UI Columns</h4>
+                        <p style="font-size: 0.9rem; color: #94a3b8;">Define how to populate the fixed UI Result
+                            columns.</p>
+
+                        <div id="uiOutputRowsContainer" style="margin-bottom: 1rem;">
+                            <!-- Dynamic UI Rows Here -->
+                            <div style="text-align: center; padding: 20px; color: #64748b; font-style: italic; background: rgba(15, 23, 42, 0.3); border-radius: 6px;"
+                                id="noUiRowsMsg">
+                                No UI columns defined. Default columns (Name, Code, Response) might be used if empty.
+                            </div>
+                        </div>
+
+                        <!-- Add Button -->
+                        <button onclick="addUIOutputRow()"
+                            style="width: 100%; border: 1px dashed #475569; background: rgba(15, 23, 42, 0.5); color: #94a3b8; padding: 12px; border-radius: 6px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 1.5rem;"
+                            onmouseover="this.style.borderColor='#a78bfa'; this.style.color='#a78bfa'; this.style.background='rgba(167, 139, 250, 0.05)'"
+                            onmouseout="this.style.borderColor='#475569'; this.style.color='#94a3b8'; this.style.background='rgba(15, 23, 42, 0.5)'">
+                            <span style="font-size: 1.1rem;">+</span> Add UI Column
+                        </button>
+
+                        <!-- Row: Status Removed (User requested everything to be configurable) -->
+                    </div>
+
+                    <div>
+                        <h4 style="margin-top:0; color: #e2e8f0;">Additional AI Instructions</h4>
+                        <textarea id="modalOutputInstructions" rows="5"
+                            placeholder="Any specific logic for extracting data for the UI? e.g. 'If error, parse the 'details' field instead of message'"
+                            style="width: 100%; background: #0f172a; border: 1px solid #334155; padding: 10px; color: white; border-radius: 4px; resize: vertical;"></textarea>
+                    </div>
+                </div>
+
+                <!-- EXCEL OUTPUT TAB -->
+                <div id="tabContent-excel" style="display: none;">
+                    <div style="margin-bottom: 1rem; border-bottom: 1px solid #475569; padding-bottom: 10px;">
+                        <h4 style="margin:0; color: #e2e8f0;">Excel Output Columns</h4>
+                        <p style="font-size: 0.8rem; color: #94a3b8; margin: 2px 0 0 0;">Define columns for the final
+                            Excel report. You can select input columns to preserve them.</p>
+                    </div>
+
+                    <div
+                        style="display: grid; grid-template-columns: 1fr 1fr 1fr 30px; gap: 10px; padding-bottom: 5px; margin-bottom: 5px;">
+                        <div
+                            style="color: #64748b; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">
+                            Column Name</div>
+                        <div
+                            style="color: #64748b; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">
+                            Value Source</div>
+                        <div
+                            style="color: #64748b; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">
+                            Logic / Condition</div>
+                        <div></div>
+                    </div>
+
+                    <div id="excelOutputRowsContainer" style="margin-bottom: 1rem;">
+                        <!-- Dynamic Rows Here -->
+                        <div style="text-align: center; padding: 20px; color: #64748b; font-style: italic; background: rgba(15, 23, 42, 0.3); border-radius: 6px;"
+                            id="noExcelRowsMsg">
+                            No Excel columns defined. The script will output raw API response by default.
+                        </div>
+                    </div>
+
+                    <!-- Modern Dashed Appender Button -->
+                    <button onclick="addExcelOutputRow()"
+                        style="width: 100%; border: 1px dashed #475569; background: rgba(15, 23, 42, 0.5); color: #94a3b8; padding: 12px; border-radius: 6px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px;"
+                        onmouseover="this.style.borderColor='#a78bfa'; this.style.color='#a78bfa'; this.style.background='rgba(167, 139, 250, 0.05)'"
+                        onmouseout="this.style.borderColor='#475569'; this.style.color='#94a3b8'; this.style.background='rgba(15, 23, 42, 0.5)'">
+                        <span style="font-size: 1.1rem;">+</span> Add Excel Column
+                    </button>
+                </div>
+
+                <!-- Datalist for Excel Columns (Populated dynamically) -->
+                <datalist id="inputColumnsList"></datalist>
+
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-primary" onclick="closeOutputConfigModal()">Done</button>
+        </div>
+    </div>
+</div>

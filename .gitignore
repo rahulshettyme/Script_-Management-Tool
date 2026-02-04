@@ -13,29 +13,31 @@ runner_debug.txt
 *.log
 
 # --- DEV / TEST SCRIPTS ---
-# (These are not needed for running the tool)
-test_*.py
-debug_*.py
-manual_conversion_test.py
-reproduce_issue.py
-verify_*.py
-*.agent
+# (Some dev scripts are useful to keep in source, uncomment if you want to ignore them)
+# test_*.py
+# debug_*.py
 
 # --- BACKUPS & DRAFTS ---
-Draft Scripts/
-Original Scripts/
+# We WANT to track these in the source/backup repo
+# Draft Scripts/
+# Original Scripts/
 valid_token_BACKUP.txt
 
 # --- SERVER & MANAGEMENT ---
-start_server.bat
-stop_server.bat
-script_dashboard.html
-script_management.html
-script_dashboard.js
-script_management_v2.js
+# We WANT to track these in the source/backup repo
+# start_server.bat
+# stop_server.bat
+# script_dashboard.html
+# script_management.html
+# script_dashboard.js
+# script_management_v2.js
 
 # --- OS / EDITOR ---
 .vscode/
 .idea/
 .DS_Store
 Thumbs.db
+
+System/secrets.json
+TEST_DEPLOYMENT_TARGET/
+Data_Generate_Deploy/

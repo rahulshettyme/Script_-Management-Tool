@@ -14,7 +14,7 @@ def run(rows, token, env_config):
     """
     
     # --- 1. CONFIGURATION ---
-    base_url = env_config.get('apiBaseUrl')
+    base_url = env_config.get('apiBaseUrl') or env_config.get('apiurl')
     if not base_url:
          # Fallback Logic if not provided
          env_name = env_config.get('environment', 'Prod')
@@ -84,10 +84,18 @@ def run(rows, token, env_config):
 
     # Parse Boundary
     boundary = env_config.get('boundary', {})
-    min_lat = boundary.get('minLat')
-    max_lat = boundary.get('maxLat')
-    min_long = boundary.get('minLong')
-    max_long = boundary.get('maxLong')
+    
+    def safe_float(v):
+        try:
+            val = float(v)
+            return val
+        except (ValueError, TypeError):
+            return None
+
+    min_lat = safe_float(boundary.get('minLat'))
+    max_lat = safe_float(boundary.get('maxLat'))
+    min_long = safe_float(boundary.get('minLong'))
+    max_long = safe_float(boundary.get('maxLong'))
     
     # --- 4. PROCESSING FUNC ---
     def process_row(row):

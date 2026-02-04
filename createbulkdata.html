@@ -507,6 +507,14 @@
                 </div>
             </div>
 
+            <!-- Script Description (New) -->
+            <div id="script-description-container" class="hidden"
+                style="margin-bottom: 1.5rem; padding: 1rem; background: #e3f2fd; border-left: 4px solid #2196f3; border-radius: 4px;">
+                <h4 style="margin: 0 0 0.5rem 0; color: #1565c0; font-size: 0.95rem;">📄 Script Description</h4>
+                <p id="script-description-text"
+                    style="margin: 0; color: #0d47a1; font-size: 0.9rem; line-height: 1.5; white-space: pre-wrap;"></p>
+            </div>
+
             <!-- Boundary Configuration (shown for coordinates type) -->
             <div id="boundary-config" class="boundary-config hidden">
                 <h4 style="color: var(--text-primary); margin-bottom: 0.5rem;">📍 Boundary Configuration</h4>
@@ -579,6 +587,19 @@
                     <input type="text" id="additional-attributes-input" class="form-control"
                         placeholder="e.g. attr1, attr2, customKey">
                 </div>
+            </div>
+
+            <!-- Target Location Section (Dynamic Geofencing) -->
+            <div id="target-location-section" class="hidden"
+                style="margin-top: 15px; padding: 10px; background: #e3f2fd; border-radius: 4px; border: 1px solid #90caf9;">
+                <label style="font-weight: 500; color: #1565c0; display: block; margin-bottom: 8px;">
+                    📍 Target Location (Dynamic Geofencing)
+                </label>
+                <input type="text" id="target-location-input" class="material-input" placeholder="e.g. Karnataka, India"
+                    style="background: white !important; padding: 8px;">
+                <p style="font-size: 0.8rem; color: #1e88e5; margin-top: 5px;">
+                    Enter a location name to dynamically validate coordinates against its boundary.
+                </p>
             </div>
 
             <!-- Advanced Execution Settings Removed (Automated based on Script Template) -->
@@ -706,6 +727,7 @@
 
     <script src="System/address_utils.js"></script>
     <script src="components/login_component.js"></script>
+    <script src="components/executor_v2.js"></script>
     <script src="script.js"></script>
 </body>
 

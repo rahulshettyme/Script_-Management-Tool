@@ -5,11 +5,33 @@ import requests
 import re
 from typing import Dict, List, Any, Tuple
 
+def sanitize_code(code: str) -> str:
+    """Sanitizes sensitive information like JWT tokens from the code."""
+    # Regex for JWT tokens (Header.Payload.Signature)
+    # Heuristic: 3 parts separated by dots, base64url characters
+    jwt_pattern = r'eyJ[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+'
+    
+    # Replace with a safe placeholder
+    sanitized = re.sub(jwt_pattern, '"<REDACTED_ACCESS_TOKEN>"', code)
+    return sanitized
+
 def get_gemini_api_key():
     """Fetches Gemini API Key from Env Var or System/db.json"""
     key = os.environ.get("GOOGLE_API_KEY", "").strip()
     if key: return key
     
+    # 2. Try secrets.json (Local Development)
+    try:
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) 
+        secrets_path = os.path.join(base_dir, "System", "secrets.json")
+        if os.path.exists(secrets_path):
+            with open(secrets_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                key = data.get("google_api_key", "").strip() or data.get("gemini_api_key", "").strip()
+                if key: return key
+    except: pass
+
+    # 3. Fallback to db.json (Legacy)
     try:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__))) 
         db_path = os.path.join(base_dir, "System", "db.json")
@@ -21,26 +43,50 @@ def get_gemini_api_key():
     return ""
 
 def extract_excel_columns(code: str) -> List[str]:
-    """Extract Excel column names from the code."""
-    columns = set()
+    """Extract Excel column names from code comments (Priority) or usage."""
+    
+    # 1. OPTION A: Look for explicit definition (Standard Format)
+    # Format: # Excel Columns: Col1, Col2, Col3 OR # Excel Columns for Input/Processing: Col1, Col2
+    explicit_match = re.search(r'#\s*Excel Columns(?:\s+for\s+Input/Processing)?:\s*(.*)', code, re.IGNORECASE)
+    if explicit_match:
+        raw_cols = explicit_match.group(1).strip()
+        if raw_cols:
+             # Strip leading/trailing whitespace from the whole string first
+             raw_cols = raw_cols.strip()
+             return [c.strip() for c in raw_cols.split(',') if c.strip()]
+
+    # 2. OPTION B: Scan usage in code (Fallback)
+    columns = []
+    seen = set()
     
     # Look for row.get('ColumnName') or row['ColumnName'] patterns
     patterns = [
-        r"row\.get\(['\"]([^'\"]+)['\"]\)",
-        r"row\[['\"]([^'\"]+)['\"]\]"
+        r"row\.get\(['\"]([^'\"]+)['\"]",  # Matches row.get('Col', ...)
+        r"row\[['\"]([^'\"]+)['\"]\]",    # Matches row['Col']
+        # Support for row.iloc (infer name from variable assignment)
+        r"(\w+)\s*=\s*(?:get_value\()?row\.iloc\[", 
+        # Support for dict keys with iloc value
+        r"['\"](\w+)['\"]\s*:\s*(?:get_value\()?row\.iloc\["
     ]
     
+    all_matches = []
+    
     for pattern in patterns:
-        matches = re.findall(pattern, code)
-        columns.update(matches)
+        for match in re.finditer(pattern, code):
+            # match.groups() contains the captured groups. We expect 1 group.
+            if match.groups():
+                col_name = match.group(1)
+                all_matches.append((match.start(), col_name))
     
-    # Common output columns
-    if 'Status' not in columns:
-        columns.add('Status')
-    if 'API_Response' not in columns:
-        columns.add('API_Response')
+    # Sort matches by their position in the code
+    all_matches.sort(key=lambda x: x[0])
     
-    return sorted(list(columns))
+    for _, col in all_matches:
+        if col not in seen:
+            seen.add(col)
+            columns.append(col)
+    
+    return columns
 
 def extract_script_name(code: str) -> str:
     """Extract script name from docstring or filename."""
@@ -119,7 +165,10 @@ OUTPUT (JSON only, no markdown):
 }}
 
 CRITICAL:
-- For PUT/POST: Show EXACT nested paths (e.g., "farmer_data['data']['tags']", not just "tags")
+- IGNORE authentication/token generation steps (handled globally)
+- USE RELATIVE PATHS for endpoints (e.g. /services/..., NOT https://domain.com/...)
+- DISTINGUISH between Mandatory Input Excel Columns and UI Output Columns.
+- UI Output columns (like ID, Name, Status, Response) should NOT be listed in excelColumns if they are only for display and not required in the input file.
 - Keep descriptions under 100 chars
 - Output valid JSON only
 """
@@ -139,6 +188,7 @@ def build_enhanced_prompt(code_content: str, excel_columns: List[str]) -> str:
   "scriptName": "Brief descriptive name",
   "description": "One sentence description",
   "excelColumns": {excel_columns},
+  "uiColumns": ["ID", "Name", "Status", "Response"],
   "steps": [
     {{
       "type": "API",
@@ -183,6 +233,9 @@ CORRECT: "instruction": "Fetch farmer object, update farmer_data['data']['tags']
 7. Order steps by execution sequence
 8. If payload modifies a fetched object, state: "Modify response from Step X at path Y"
 9. Set "runOnce": true if the API call fetches Master Data (e.g. Crops, Soils) and should be cached/run only once.
+10. DISTINGUISH Input vs Output:
+    - "excelColumns": ONLY columns required for the INPUT Excel file.
+    - "uiColumns": Columns purely for display in the UI result table (e.g., 'ID', 'Name', 'Status', 'Response'). If a column (like 'CA_ID') is both an input AND used for display title, list it in BOTH.
 
 Start analysis:
 """
@@ -357,6 +410,16 @@ def normalize_steps(steps: List[Dict], code_content: str = "") -> List[Dict]:
         
         # Cleanup based on type
         if step["type"] == "API":
+            # FILTER: Skip Authentication/Token steps
+            name_lower = step["apiName"].lower()
+            endpoint_lower = step["endpoint"].lower()
+            if "token" in name_lower or "auth" in name_lower or "login" in name_lower or "get_access_token" in name_lower:
+                continue
+            
+            # CLEANER: Strip Hardcoded Domain (keep relative path)
+            if step["endpoint"] and step["endpoint"].startswith("http"):
+                step["endpoint"] = re.sub(r'^https?://[^/]+', '', step["endpoint"])
+
             if not step["endpoint"]:
                 step["endpoint"] = "/unknown"
             if not step["instruction"]:
@@ -400,7 +463,9 @@ def reverse_engineer_script(code_content: str) -> Dict[str, Any]:
     ]
 
     # Use concise prompt to avoid truncation
-    prompt = build_concise_prompt(code_content, excel_columns)
+    # SANITIZATION: Remove tokens before sending to AI
+    sanitized_code = sanitize_code(code_content)
+    prompt = build_concise_prompt(sanitized_code, excel_columns)
     
     payload = {
         "contents": [{
