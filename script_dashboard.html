@@ -176,6 +176,8 @@
             width: 100%;
             border-collapse: collapse;
             text-align: left;
+            table-layout: fixed;
+            /* Fix column widths */
         }
 
         th {
@@ -363,10 +365,11 @@
             <table>
                 <thead>
                     <tr>
-                        <th style="width: 45%;">Script Name</th>
-                        <th style="width: 15%;">Status</th>
+                        <th style="width: 35%;">Script Name</th>
+                        <th style="width: 10%;">Status</th>
                         <th style="width: 25%;">Assigned Team</th>
-                        <th style="width: 15%;">Reusable</th>
+                        <th style="width: 10%;">Reusable</th>
+                        <th style="width: 20%;">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="scriptTableBody">

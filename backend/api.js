@@ -40,7 +40,9 @@ const readSecrets = () => {
 // Initialize API Key from Environment > Secrets File > DB File (Legacy)
 const dbData = readDb();
 const secretsData = readSecrets();
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || secretsData.gemini_api_key || dbData.gemini_api_key || "";
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || secretsData.google_api_key || secretsData.gemini_api_key || dbData.google_api_key || dbData.gemini_api_key || "";
+// Specific Key for Geocoding (User Request)
+const GEOCODING_API_KEY = secretsData.Geocoding_api_key || GOOGLE_API_KEY;
 
 
 // Helper to write DB
@@ -146,9 +148,9 @@ module.exports = function (app) {
 
         let geocodeUrl;
         if (address) {
-            geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GOOGLE_API_KEY}`;
+            geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GEOCODING_API_KEY}`;
         } else if (lat !== undefined && lng !== undefined) {
-            geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_API_KEY}`;
+            geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GEOCODING_API_KEY}`;
         } else {
             return res.status(400).json({ error: 'Missing address or lat/lng parameters' });
         }
@@ -174,11 +176,14 @@ module.exports = function (app) {
                 });
 
                 geoRes.on('end', () => {
+                    console.log(`[Geocode Proxy] Status: ${geoRes.statusCode}`);
                     try {
                         const jsonData = JSON.parse(data);
 
                         if (geoRes.statusCode !== 200 || !jsonData.results || jsonData.results.length === 0) {
-                            return res.json({});
+                            console.warn('[Geocode Proxy] Failed or Empty:', JSON.stringify(jsonData));
+                            // Return raw error or empty to help debug
+                            return res.json(jsonData);
                         }
 
                         const result = jsonData.results[0];
@@ -211,7 +216,8 @@ module.exports = function (app) {
                             buildingName: '',
                             placeId: result.place_id || '',
                             latitude: latitude,
-                            longitude: longitude
+                            longitude: longitude,
+                            geometry: result.geometry // Include full geometry for bounds/viewport
                         };
 
                         res.json(addressResult);
@@ -609,6 +615,9 @@ module.exports = function (app) {
                 });
             };
 
+
+
+
             // Step 1: Call Geo Area API
             console.log(`[Area Audit] Calling GeoAPI: ${geoAreaUrl}`);
             const geoResult = await makeRequest(geoAreaUrl, 'POST', geoPayload);
@@ -677,7 +686,8 @@ module.exports = function (app) {
         }
     });
 
-    // Expose Environment URLs to Frontend
+
+    // 2. GET ENVIRONMENT CONFIG
     app.get('/api/env-urls', (req, res) => {
         const db = readDb();
         res.json({
@@ -740,109 +750,18 @@ module.exports = function (app) {
         }
     });
 
-    // 4. Test Run (Convert & Execute)
-    app.post('/api/scripts/test-run', async (req, res) => {
-        const { code, rows, token, envConfig, columns } = req.body;
-        if (!code || !rows || !token) return res.status(400).json({ error: 'Missing parameters' });
-
-        const timestamp = Date.now();
-        const tempScriptName = `TEST_${timestamp}.py`;
-        const tempScriptPath = path.join(__dirname, '..', 'Converted Scripts', tempScriptName);
-        const converterPath = path.join(__dirname, '..', 'Manager', 'script_converter.py');
-        const bridgePath = path.join(__dirname, '..', 'Manager', 'runner_bridge.py');
-
-        try {
-            // STEP 1: CONVERT CODE
-            const converter = spawn('python', [converterPath], {
-                env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
-            });
-
-            let convertedCode = '';
-            let converterError = '';
-
-            converter.stdout.on('data', d => convertedCode += d.toString());
-            converter.stderr.on('data', d => converterError += d.toString());
-
-            const conversionPromise = new Promise((resolve, reject) => {
-                converter.on('close', (code) => {
-                    if (code !== 0) reject(new Error(`Conversion failed: ${converterError}`));
-                    else resolve(convertedCode);
-                });
-            });
-
-            // Write input code to converter
-            converter.stdin.write(code);
-            converter.stdin.end();
-
-            await conversionPromise;
-
-            // STEP 2: WRITE TEMP SCRIPT
-            const scriptsDir = path.dirname(tempScriptPath);
-            if (!fs.existsSync(scriptsDir)) fs.mkdirSync(scriptsDir, { recursive: true });
-            fs.writeFileSync(tempScriptPath, convertedCode);
-
-            // STEP 2b: WRITE DATA TO TEMP FILE (Fix for ENAMETOOLONG)
-            const dataFileName = `data_${timestamp}_${Math.random().toString(36).substring(7)}.json`;
-            const dataFilePath = path.join(__dirname, '..', 'temp_data', dataFileName);
-            const tempDataDir = path.dirname(dataFilePath);
-            if (!fs.existsSync(tempDataDir)) fs.mkdirSync(tempDataDir, { recursive: true });
-            fs.writeFileSync(dataFilePath, JSON.stringify(rows));
-
-            // STEP 3: EXECUTE
-            const args = [
-                bridgePath,
-                "--script", tempScriptPath,
-                "--data-file", dataFilePath,
-                "--token", token,
-                "--env", JSON.stringify(envConfig || {}),
-                "--columns", JSON.stringify(columns || [])
-            ];
-
-            const runner = spawn('python', ['-u', ...args], {
-                env: {
-                    ...process.env,
-                    PYTHONIOENCODING: 'utf-8',
-                    GOOGLE_API_KEY: GOOGLE_API_KEY
-                }
-            });
-
-            let stdoutData = '';
-            let stderrData = '';
-
-            runner.stdout.on('data', d => stdoutData += d.toString());
-            runner.stderr.on('data', d => stderrData += d.toString());
-
-            runner.on('close', (code) => {
-                // Cleanup
-                try { fs.unlinkSync(tempScriptPath); } catch (e) { }
-                try { fs.unlinkSync(dataFilePath); } catch (e) { }
-
-                if (code !== 0) {
-                    return res.status(500).json({
-                        error: 'Execution failed',
-                        logs: stdoutData + "\n[STDERR]\n" + stderrData,
-                        rawOutput: stdoutData
-                    });
-                }
-
-                res.json({
-                    success: true,
-                    logs: stdoutData,
-                    rawOutput: stdoutData
-                });
-            });
-
-        } catch (e) {
-            console.error('Test Run Error:', e);
-            res.status(500).json({ error: e.message });
+    // 2. Execute Python Script
+    // --- Config Endpoints ---
+    app.get('/api/config/maps-key', (req, res) => {
+        if (GOOGLE_API_KEY) {
+            res.json({ key: GOOGLE_API_KEY });
+        } else {
+            res.status(404).json({ error: "No API Key configured" });
         }
     });
 
-
-
-    // 2. Execute Python Script
-    // 2. Execute Python Script
-    app.post('/api/scripts/execute', (req, res) => {
+    // 1. Execute Script
+    app.post('/api/scripts/execute', async (req, res) => {
         // Clear console for fresh logs per execution
         console.clear();
         console.log('\n--- NEW SCRIPT EXECUTION STARTED ---\n');
@@ -851,6 +770,17 @@ module.exports = function (app) {
 
         if (!scriptName || !rows || !token) {
             return res.status(400).json({ error: 'Missing required parameters' });
+        }
+
+        // [Fix for Parity with Test Run] Inject apiBaseUrl if missing
+        if (envConfig && envConfig.environment) {
+            console.log(`[Execute] Resolving URL for env: ${envConfig.environment}`);
+            const { apiBaseUrl } = getEnvUrls(envConfig.environment);
+            if (apiBaseUrl) {
+                envConfig.apiBaseUrl = apiBaseUrl;
+                // Also ensure 'apiurl' is set as some legacy scripts use this
+                if (!envConfig.apiurl) envConfig.apiurl = apiBaseUrl;
+            }
         }
 
         // Locate the script
@@ -875,6 +805,22 @@ module.exports = function (app) {
                 // If it is an object array (legacy), map to names? 
                 // In register we savd: `expected_columns: [...names], columns: objectArray`
                 // runner_bridge expects List of Strings for columns.
+
+                // FALLBACK 0: Read from Code Header (Truth Source)
+                if (columns.length === 0) {
+                    try {
+                        const content = fs.readFileSync(scriptPath, 'utf8');
+                        const headerMatch = content.match(/#\s*EXPECTED_INPUT_COLUMNS:\s*([^\n]+)/);
+                        if (headerMatch && headerMatch[1]) {
+                            columns = headerMatch[1].split(',').map(c => c.trim()).filter(c => c);
+                            // console.log(`[Execute] Parsed columns from code header: ${columns.length}`);
+                        }
+                    } catch (e) {
+                        console.error("[Execute] Failed to parse columns from code header:", e);
+                    }
+                }
+
+                // FALLBACK 1: REMOVED (User requested single flow - Code Header is Source of Truth)
                 if (columns.length > 0 && typeof columns[0] === 'object') {
                     columns = columns.map(c => c.name || c.header);
                 }
@@ -906,6 +852,12 @@ module.exports = function (app) {
             "--columns", JSON.stringify(columns)
         ];
 
+        // Only add debug flag if explicitly requested (e.g. from Test Run or strict debug mode)
+        // We do NOT want this on by default for Production runs just because attributes are allowed.
+        if (req.body.debug === true) {
+            args.push("--debug");
+        }
+
         console.log(`Executing Python Script: ${scriptName}`);
         console.log(`[Execute] Env Config:`, JSON.stringify(envConfig));
 
@@ -915,8 +867,8 @@ module.exports = function (app) {
                 PYTHONIOENCODING: 'utf-8',
                 // Add components folder to PYTHONPATH so scripts can import from it
                 PYTHONPATH: process.env.PYTHONPATH
-                    ? process.env.PYTHONPATH + path.delimiter + path.join(__dirname, '..', 'components')
-                    : path.join(__dirname, '..', 'components'),
+                    ? process.env.PYTHONPATH + path.delimiter + path.join(__dirname, '..')
+                    : path.join(__dirname, '..'),
                 GOOGLE_API_KEY: GOOGLE_API_KEY
             }
         });
@@ -1150,7 +1102,16 @@ module.exports = function (app) {
 
     // Generate Script Template
     app.post('/api/scripts/generate', (req, res) => {
-        const { description, existing_code, scriptName, inputColumns, isMultithreaded, outputConfig } = req.body;
+        const { description, existing_code, scriptName, inputColumns, isMultithreaded, outputConfig, allowAdditionalAttributes, enableGeofencing } = req.body;
+
+        console.log('[DEBUG GENERATE] Incoming Request Body:', JSON.stringify({
+            scriptName,
+            isMultithreaded,
+            allowAdditionalAttributes,
+            enableGeofencing,
+            outputConfigKeys: Object.keys(outputConfig || {})
+        }));
+
         if (!description) return res.status(400).json({ error: 'Missing description' });
 
         const generatorPath = path.join(__dirname, '..', 'Manager', 'script_generator.py');
@@ -1161,7 +1122,16 @@ module.exports = function (app) {
         let stdoutData = '';
         pythonProcess.stdout.on('data', d => stdoutData += d.toString());
         // Pass everything needed for update logic
-        pythonProcess.stdin.write(JSON.stringify({ description, existing_code, scriptName, inputColumns, isMultithreaded, outputConfig }));
+        pythonProcess.stdin.write(JSON.stringify({
+            description,
+            existing_code,
+            scriptName,
+            inputColumns,
+            isMultithreaded,
+            outputConfig,
+            allowAdditionalAttributes: allowAdditionalAttributes || false,
+            enableGeofencing: enableGeofencing || false
+        }));
         pythonProcess.stdin.end();
 
         pythonProcess.on('close', code => {
@@ -1247,27 +1217,49 @@ module.exports = function (app) {
     });
 
     // Delete (Discard)
+    // Delete (Discard)
     app.post('/api/scripts/delete', (req, res) => {
         const { filename } = req.body;
         if (!filename) return res.status(400).json({ error: 'Missing filename' });
 
         try {
-            // Delete files
-            const scriptPath = path.join(__dirname, '..', 'Converted Scripts', filename);
-            const configPath = path.join(__dirname, '..', 'Script Configs', filename.replace('.py', '.json'));
+            const cleanName = filename.replace('.py', '');
+            const pyName = `${cleanName}.py`;
+            const jsonName = `${cleanName}.json`;
+            const metaName = `${cleanName}.py.meta.json`;
 
-            if (fs.existsSync(scriptPath)) fs.unlinkSync(scriptPath);
-            if (fs.existsSync(configPath)) fs.unlinkSync(configPath);
-
-            // Update Registry
+            // Paths
+            const draftsDir = path.join(__dirname, '..', 'Draft Scripts');
+            const configsDir = path.join(__dirname, '..', 'Script Configs');
+            const scriptsDir = path.join(__dirname, '..', 'Converted Scripts');
+            // const originalDir = path.join(__dirname, '..', 'Original Scripts'); // DEPRECATED
             const registryPath = path.join(__dirname, '..', 'System', 'scripts_registry.json');
-            let registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
-            registry = registry.filter(r => r.filename !== filename);
-            fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2));
 
-            res.json({ success: true });
-            res.json({ success: true });
+            // 1. Try Delete from Drafts (Always check, even if Active, per usage)
+            if (fs.existsSync(path.join(draftsDir, pyName))) fs.unlinkSync(path.join(draftsDir, pyName));
+            if (fs.existsSync(path.join(draftsDir, metaName))) fs.unlinkSync(path.join(draftsDir, metaName));
+
+            // 2. Delete Active Files
+            if (fs.existsSync(path.join(scriptsDir, pyName))) fs.unlinkSync(path.join(scriptsDir, pyName));
+            if (fs.existsSync(path.join(configsDir, jsonName))) fs.unlinkSync(path.join(configsDir, jsonName));
+            // if (fs.existsSync(path.join(originalDir, pyName.replace('.py', '_original.py')))) {
+            //     fs.unlinkSync(path.join(originalDir, pyName.replace('.py', '_original.py')));
+            // }
+
+            // 3. Update Registry
+            if (fs.existsSync(registryPath)) {
+                let registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
+                const originalLength = registry.length;
+                registry = registry.filter(r => r.filename !== filename && r.name !== filename);
+
+                if (registry.length !== originalLength) {
+                    fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2));
+                }
+            }
+
+            res.json({ success: true, message: 'Script deleted successfully' });
         } catch (e) {
+            console.error("Delete failed:", e);
             res.status(500).json({ error: e.message });
         }
     });
@@ -1326,6 +1318,7 @@ module.exports = function (app) {
 
     // 5. Test Run (Temporary)
     app.post('/api/scripts/test-run', async (req, res) => {
+        console.log('[Test Run] Received Request.');
         const { code, rows, token, envConfig, columns } = req.body;
         if (!code || !rows || !token) return res.status(400).json({ error: 'Missing parameters' });
 
@@ -1338,8 +1331,18 @@ module.exports = function (app) {
             if (apiBaseUrl) {
                 envConfig.apiBaseUrl = apiBaseUrl;
             }
+
         } else {
             console.log('[Test Run] No environment in envConfig');
+        }
+
+        // Always inject master_data_config from DB
+        try {
+            const dbRef = readDb();
+            envConfig.master_data_config = dbRef.master_data_config || {};
+            console.log(`[Test Run] Injected master_data_config. Keys: ${Object.keys(envConfig.master_data_config).join(', ')}`);
+        } catch (e) {
+            console.error('[Test Run] Failed to read/inject master_data_config:', e);
         }
 
         // Create Temp File
@@ -1394,13 +1397,17 @@ module.exports = function (app) {
             "--data", JSON.stringify(rows),
             "--token", token,
             "--env", JSON.stringify(envConfig || {}),
-            "--columns", JSON.stringify(columns || [])
+            "--columns", JSON.stringify(columns || []),
+            "--debug" // ENABLE DEBUG LOGGING FOR TEST RUN
         ];
 
         const pythonProcess = spawn('python', args, {
             env: {
                 ...process.env,
                 PYTHONIOENCODING: 'utf-8',
+                PYTHONPATH: process.env.PYTHONPATH
+                    ? process.env.PYTHONPATH + path.delimiter + path.join(__dirname, '..')
+                    : path.join(__dirname, '..'),
                 GOOGLE_API_KEY: GOOGLE_API_KEY
             }
         });
@@ -1425,10 +1432,14 @@ module.exports = function (app) {
                     console.log('[Test Run] Script failed but Output Dump detected. Returning Partial Success.');
                     // Proceed to parsing logic below instead of returning 500
                 } else {
+                    const truncatedStderr = stderrData.length > 5000 ? stderrData.substring(0, 5000) + '... [TRUNCATED]' : stderrData;
+                    const truncatedStdout = stdoutData.length > 5000 ? stdoutData.substring(0, 5000) + '... [TRUNCATED]' : stdoutData;
+                    console.error('[Test Run] Execution ERROR. Stderr:', truncatedStderr);
+
                     return res.status(500).json({
                         error: 'Execution failed',
-                        details: stderrData,
-                        logs: stdoutData,
+                        details: truncatedStderr,
+                        logs: truncatedStdout,
                         convertedCode: cleanedCode
                     });
                 }
@@ -1480,7 +1491,7 @@ module.exports = function (app) {
             const configsDir = path.join(__dirname, '..', 'Script Configs');
             const scriptsDir = path.join(__dirname, '..', 'Converted Scripts');
             const registryPath = path.join(__dirname, '..', 'System', 'scripts_registry.json');
-            const originalDir = path.join(__dirname, '..', 'Original Scripts');
+            // const originalDir = path.join(__dirname, '..', 'Original Scripts'); // DEPRECATED
 
             let renamedAny = false;
 
@@ -1524,10 +1535,10 @@ module.exports = function (app) {
                 renamedAny = true;
             }
 
-            // 4. Rename Original Script (if exists)
-            if (fs.existsSync(path.join(originalDir, oldPyName))) {
-                fs.renameSync(path.join(originalDir, oldPyName), path.join(originalDir, newPyName));
-            }
+            // 4. Rename Original Script (if exists) -> DEPRECATED
+            // if (fs.existsSync(path.join(originalDir, oldPyName))) {
+            //     fs.renameSync(path.join(originalDir, oldPyName), path.join(originalDir, newPyName));
+            // }
 
             // 5. Update Registry
             if (fs.existsSync(registryPath)) {
@@ -1602,7 +1613,7 @@ module.exports = function (app) {
             const scriptsDir = path.join(__dirname, '..', 'Converted Scripts');
             const draftsDir = path.join(__dirname, '..', 'Draft Scripts');
             const configsDir = path.join(__dirname, '..', 'Script Configs');
-            const originalDir = path.join(__dirname, '..', 'Original Scripts');
+            // const originalDir = path.join(__dirname, '..', 'Original Scripts'); // DEPRECATED
 
             // Ensure dirs exist
             if (!fs.existsSync(scriptsDir)) fs.mkdirSync(scriptsDir, { recursive: true });
@@ -1631,22 +1642,52 @@ module.exports = function (app) {
                 if (mtMatch && mtMatch[1]) finalIsMultithreaded = (mtMatch[1].toLowerCase() === 'true');
             } catch (e) { console.error("Error parsing code config during register:", e); }
 
+            // Extract Boolean Configs from Code (Truth Source)
+            let finalEnableGeofencing = req.body.enableGeofencing || false;
+            let finalAllowAttributes = req.body.allowAdditionalAttributes || false;
+            try {
+                const geoMatch = code.match(/#\s*CONFIG:\s*enableGeofencing\s*=\s*(True|False|true|false)/i);
+                if (geoMatch && geoMatch[1]) finalEnableGeofencing = (geoMatch[1].toLowerCase() === 'true');
+
+                const attrMatch = code.match(/#\s*CONFIG:\s*allowAdditionalAttributes\s*=\s*(True|False|true|false)/i);
+                if (attrMatch && attrMatch[1]) finalAllowAttributes = (attrMatch[1].toLowerCase() === 'true');
+            } catch (e) { console.error("Error parsing boolean configs:", e); }
+
             const config = {
                 name: `${name}.py`,
                 filename: pyFilename,
                 team: team || "Unassigned",
                 description: description || "Custom User Script",
-                expected_columns: (inputColumns || []).map(c => c.name),
+                expected_columns: (inputColumns || []).map(c => (typeof c === 'object' && c.name) ? c.name : c),
                 columns: inputColumns,
                 requiresLogin: true,
                 isMultithreaded: finalIsMultithreaded,
                 batchSize: finalBatchSize,
                 groupByColumn: finalGroupBy,
-                enableGeofencing: req.body.enableGeofencing || false,
+                enableGeofencing: finalEnableGeofencing,
+                allowAdditionalAttributes: finalAllowAttributes,
+                additionalAttributes: req.body.additionalAttributes || [],
                 outputConfig: req.body.outputConfig || {}
             };
 
             fs.writeFileSync(path.join(configsDir, jsonFilename), JSON.stringify(config, null, 4), 'utf8');
+
+            // 4b. Save Sidecar Meta JSON - DISABLED (Single Flow Architecture)
+            // User requested NO redundant files in Converted Scripts.
+            // Meta info is saved in Registry (generation_prompt) and Code Headers (columns/config).
+            /*
+            const metaFilename = `${pyFilename}.meta.json`;
+            const metaPath = path.join(scriptsDir, metaFilename); 
+
+            // Construct full meta object (superset of config)
+            const fullMeta = {
+                ...config,
+                generationPrompt: generationPrompt,
+                draftSource: name // trace back
+            };
+            fs.writeFileSync(metaPath, JSON.stringify(fullMeta, null, 4), 'utf8');
+            */
+
 
             // 5. Update Registry
             const registryPath = path.join(__dirname, '..', 'System', 'scripts_registry.json');
@@ -1683,6 +1724,11 @@ module.exports = function (app) {
                 if (fs.existsSync(draftPath)) {
                     fs.unlinkSync(draftPath);
                     console.log(`Cleaned up draft: ${draftPath}`);
+                }
+                // Also clean up draft meta
+                const draftMetaPath = path.join(draftsDir, pyFilename + '.meta.json');
+                if (fs.existsSync(draftMetaPath)) {
+                    fs.unlinkSync(draftMetaPath);
                 }
             } catch (e) { }
 
@@ -1745,23 +1791,42 @@ module.exports = function (app) {
         try {
             const content = fs.readFileSync(scriptPath, 'utf8');
 
-            // Find generation_prompt from registry
-            let prompt = "";
-            let meta = {};
-            try {
-                const registryPath = path.join(__dirname, '..', 'System', 'scripts_registry.json');
-                if (fs.existsSync(registryPath)) {
-                    const reg = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
-                    const item = reg.find(r => r.filename === filename);
-                    if (item) {
-                        prompt = item.generation_prompt;
-                        meta = item; // Send full item as meta
-                    }
-                }
-            } catch (e) { console.error("Registry lookup failed:", e); }
+            // Strategy:
+            // 1. Check for Sidecar .meta.json (Highest Priority for Deployed Scripts)
+            // 2. Check Registry
+            // 3. Draft Healer (Fallback)
 
-            // FALLBACK: Healer Logic - Check Draft Meta if Registry is missing Config
-            // This handles cases where Registration lost data, but the Draft Meta still exists.
+            let meta = {};
+            let prompt = "";
+
+            // 1. Sidecar Meta
+            const sidecarPath = path.join(__dirname, '..', 'Converted Scripts', filename + '.meta.json');
+            if (fs.existsSync(sidecarPath)) {
+                try {
+                    const sidecar = JSON.parse(fs.readFileSync(sidecarPath, 'utf8'));
+                    meta = sidecar;
+                    prompt = sidecar.generationPrompt || "";
+                    // console.log(`[Content] Loaded meta from sidecar for ${filename}`);
+                } catch (e) { console.error("Sidecar read failed", e); }
+            }
+
+            // 2. Registry (If sidecar missing or incomplete?)
+            if (!meta.name) {
+                try {
+                    const registryPath = path.join(__dirname, '..', 'System', 'scripts_registry.json');
+                    if (fs.existsSync(registryPath)) {
+                        const reg = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
+                        const item = reg.find(r => r.filename === filename);
+                        if (item) {
+                            prompt = item.generation_prompt;
+                            meta = item; // Send full item as meta
+                        }
+                    }
+                } catch (e) { console.error("Registry lookup failed:", e); }
+            }
+
+            // 3. Draft Healer (Fallback)
+            // ... (Keep existing healer logic if still needed, but sidecar should cover it)
             if (!meta.groupByColumn || !meta.batchSize) {
                 try {
                     const draftsDir = path.join(__dirname, '..', 'Draft Scripts');
@@ -1769,24 +1834,21 @@ module.exports = function (app) {
                     if (fs.existsSync(draftMetaPath)) {
                         const draftMeta = JSON.parse(fs.readFileSync(draftMetaPath, 'utf8'));
 
-                        // Only backfill if missing in Registry
-                        if (!meta.groupByColumn && draftMeta.groupByColumn) {
-                            console.log(`[Healer] Recovered groupByColumn from Draft for ${filename}`);
-                            meta.groupByColumn = draftMeta.groupByColumn;
-                        }
-                        if (!meta.batchSize && draftMeta.batchSize) {
-                            console.log(`[Healer] Recovered batchSize from Draft for ${filename}`);
-                            meta.batchSize = draftMeta.batchSize;
-                        }
+                        // Only backfill if missing 
+                        if (!meta.groupByColumn && draftMeta.groupByColumn) meta.groupByColumn = draftMeta.groupByColumn;
+                        if (!meta.batchSize && draftMeta.batchSize) meta.batchSize = draftMeta.batchSize;
                         if (meta.isMultithreaded === undefined && draftMeta.isMultithreaded !== undefined) {
                             meta.isMultithreaded = draftMeta.isMultithreaded;
+                        }
+                        // Also fill columns if missing!
+                        if ((!meta.columns || meta.columns.length === 0) && draftMeta.inputColumns) {
+                            meta.columns = draftMeta.inputColumns;
                         }
                     }
                 } catch (e) { console.error("Draft Healer failed:", e); }
             }
 
             // OVERRIDE: Extract Config from Code Content (Truth Source)
-            // This ensures older/broken registry entries are "healed" by the code itself.
             const groupMatch = content.match(/#\s*CONFIG:\s*groupByColumn\s*=\s*["']([^"']+)["']/);
             if (groupMatch && groupMatch[1]) meta.groupByColumn = groupMatch[1];
 
@@ -1795,6 +1857,19 @@ module.exports = function (app) {
 
             const mtMatch = content.match(/#\s*CONFIG:\s*isMultithreaded\s*=\s*(True|False|true|false)/i);
             if (mtMatch && mtMatch[1]) meta.isMultithreaded = (mtMatch[1].toLowerCase() === 'true');
+
+            const geoMatch = content.match(/#\s*CONFIG:\s*enableGeofencing\s*=\s*(True|False|true|false)/i);
+            if (geoMatch && geoMatch[1]) meta.enableGeofencing = (geoMatch[1].toLowerCase() === 'true');
+
+            const attrMatch = content.match(/#\s*CONFIG:\s*allowAdditionalAttributes\s*=\s*(True|False|true|false)/i);
+            if (attrMatch && attrMatch[1]) meta.allowAdditionalAttributes = (attrMatch[1].toLowerCase() === 'true');
+
+            // FALLBACK: Parse columns from Code Header (Truth Source)
+            const headerMatch = content.match(/#\s*EXPECTED_INPUT_COLUMNS:\s*([^\n]+)/);
+            if (headerMatch && headerMatch[1]) {
+                meta.columns = headerMatch[1].split(',').map(c => c.trim()).filter(c => c);
+            }
+            // FALLBACK: REMOVED (User requested single flow - Code Header is Source of Truth)
 
             res.json({ content, generationPrompt: prompt, meta: meta });
         } catch (e) {
@@ -1866,35 +1941,43 @@ module.exports = function (app) {
             if (!code || !name) return res.status(400).json({ error: "Missing code or name" });
 
             const draftsDir = path.join(__dirname, '..', 'Draft Scripts');
-            const originalDir = path.join(__dirname, '..', 'Original Scripts');
+            // const originalDir = path.join(__dirname, '..', 'Original Scripts'); // DEPRECATED
 
             if (!fs.existsSync(draftsDir)) fs.mkdirSync(draftsDir, { recursive: true });
-            if (!fs.existsSync(originalDir)) fs.mkdirSync(originalDir, { recursive: true });
+            // if (!fs.existsSync(originalDir)) fs.mkdirSync(originalDir, { recursive: true });
 
             const filename = (name.endsWith('.py') ? name : `${name}.py`).replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_py$/, '.py');
             const draftPath = path.join(draftsDir, filename);
 
-            // SAVE ORIGINAL (If New / Not Exists)
+            // SAVE ORIGINAL (If New / Not Exists) -> DEPRECATED
             // Captures the initial state (e.g. pasted code) before draft edits
-            const originalPath = path.join(originalDir, filename.replace('.py', '_original.py'));
-            if (!fs.existsSync(originalPath)) {
-                fs.writeFileSync(originalPath, code, 'utf8');
-                console.log(`[Save Draft] Preserved original content for: ${filename}`);
-            }
+            // const originalPath = path.join(originalDir, filename.replace('.py', '_original.py'));
+            // if (!fs.existsSync(originalPath)) {
+            //     fs.writeFileSync(originalPath, code, 'utf8');
+            //     console.log(`[Save Draft] Preserved original content for: ${filename}`);
+            // }
 
             fs.writeFileSync(draftPath, code, 'utf8');
 
             // Save Metadata Sidecar
             const { description, generationPrompt, inputColumns, team, groupByColumn, isMultithreaded, batchSize, outputConfig } = req.body;
+
+            // FIX: STRICT MODE - Do not extract from prompt. Blindly follow inputColumns.
+            let finalInputColumns = inputColumns || [];
+            // REMOVED HEALER LOGIC PER USER REQUEST
+
             const metaPath = path.join(draftsDir, filename + '.meta.json');
             const meta = {
                 description: description || "",
                 generationPrompt: generationPrompt || description || "", // Fallback for legacy
-                inputColumns: inputColumns || [],
+                inputColumns: finalInputColumns,
                 team: team || "Unassigned",
                 groupByColumn: groupByColumn,
                 isMultithreaded: isMultithreaded,
+                isMultithreaded: isMultithreaded,
                 enableGeofencing: req.body.enableGeofencing || false,
+                allowAdditionalAttributes: req.body.allowAdditionalAttributes || false,
+                additionalAttributes: req.body.additionalAttributes || [],
                 batchSize: batchSize || 10,
                 outputConfig: outputConfig || {},
                 mtime: Date.now()

@@ -1,0 +1,12 @@
+node_modules
+__pycache__
+*.pyc
+.git
+.gitignore
+Dockerfile
+temp_data
+Draft Scripts
+Original Scripts
+.env
+secrets.json
+.cache_master_data

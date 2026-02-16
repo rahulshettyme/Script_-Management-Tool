@@ -1,9 +1,17 @@
 {
-  "description": "Script Name: getLocationsForAddVariety\nExcel Columns: Location,Output\n\nStep 1 [LOGIC]:\n  - Logic: Extracts address text or lat/lng from input row, case-insensitively.\n\nStep 2 [API]:\n  - Step/Variable Name: Google Geocode API Call\n  - Call GET https://maps.googleapis.com/maps/api/geocode/json\n  - Payload Type: QUERY\n  - Payload Example: { \"address\": \"<address_text_from_input>\", \"latlng\": \"<lat_from_input>,<lng_from_input>\", \"key\": \"<GOOGLE_API_KEY>\" }\n  - Expected Response: address_info\n  - Instructions: Calls Google Geocode API using country from input.\n\nStep 3 [LOGIC]:\n  - Logic: Parses Google Geocode API response, extracts components, and updates output row as below payload structure\n\"locations\": {\n                    \"bounds\": {\n                        \"northeast\": {\n                            \"lat\": 72.7087158,\n                            \"lng\": -66.3193754\n                        },\n                        \"southwest\": {\n                            \"lat\": 15.7760139,\n                            \"lng\": -173.2992296\n                        }\n                    },\n                    \"country\": \"United States\",\n                    \"placeId\": \"ChIJCzYy5IS16lQRQrfeQ5K5Oxw\",\n                    \"latitude\": 38.7945952,\n                    \"longitude\": -106.5348379,\n                    \"geoInfo\": {\n                        \"type\": \"FeatureCollection\",\n                        \"features\": [{\n                                \"type\": \"Feature\",\n                                \"properties\": {},\n                                \"geometry\": {\n                                    \"type\": \"Polygon\",\n                                    \"coordinates\": [[[-173.2992296, 15.7760139], [-66.3193754, 15.7760139], [-66.3193754, 72.7087158], [-173.2992296, 72.7087158], [-173.2992296, 15.7760139]]]\n                                }\n                            }\n                        ]\n                    },\n                    \"name\": \"United States\"\n                },\n\n",
-  "inputColumns": [
-    "Location",
-    "Output"
-  ],
+  "description": "",
+  "generationPrompt": "Script Name: getLocationsForAddVariety\nExcel Columns: Location,Output\n\nStep 1 [LOGIC]:\n  - Logic: Extracts address text from input row, case-insensitively.\n\nStep 2 [GEO]:\n  - Geo Location Logic: {\"bounds\":{\"northeast\":{\"lat\":13.63848008362668,\"lng\":74.70381258542338},\"southwest\":{\"lat\":13.60874235996243,\"lng\":74.68304165451536}},\"country\":\"India\",\"administrativeAreaLevel3\":\"Udupi\",\"administrativeAreaLevel2\":\"Mysore Division\",\"administrativeAreaLevel1\":\"Karnataka\",\"placeId\":\"ChIJcYwVewaOvDsRy73eNhezPjs\",\"latitude\":13.6235274,\"longitude\":74.6917418,\"geoInfo\":{\"type\":\"FeatureCollection\",\"features\":[{\"type\":\"Feature\",\"properties\":{},\"geometry\":{\"type\":\"Polygon\",\"coordinates\":[[[74.68304165451536,13.60874235996243],[74.70381258542338,13.60874235996243],[74.70381258542338,13.63848008362668],[74.68304165451536,13.63848008362668],[74.68304165451536,13.60874235996243]]]}}]},\"name\":\"Kundapura\"}\n  - IMPORTANT: You MUST import and use 'components.geofence_utils' for this step.\n  - Usage: boundary_data = geofence_utils.get_boundary(location_name, env_config.get('google_api_key'))\n  - CRITICAL: 'boundary_data' IS the direct result object. It is NOT wrapped in 'google_response' or 'data'.\n  - 'boundary_data' structure: { \"formatted_address\": \"...\", \"geometry\": { \"location\": {...}, \"viewport\": {...}, \"bounds\": {...} }, \"place_id\": \"...\", \"address_components\": [...], \"geojson_polygon\": {...} }\n  - NOTE: 'geojson_polygon' is ALREADY a FeatureCollection. DO NOT wrap it in another FeatureCollection or check for 'Polygon' type.\n  - CRITICAL: When mapping 'bounds' and 'geoInfo', ALWAYS prioritize 'geometry.bounds' over 'geometry.viewport' if available, as 'bounds' is the strict geopolitical boundary.\n  - CRITICAL: The final Output column MUST be a JSON string. Use 'json.dumps(output_payload)' to populate the row.\n  - YOU MUST PARSE 'boundary_data' directly to extract fields required by the logic (e.g. boundary_data['formatted_address'], boundary_data['geometry']['location']).\n\n",
+  "inputColumns": [],
   "team": "Unassigned",
-  "mtime": 1768377294761
+  "groupByColumn": "",
+  "isMultithreaded": false,
+  "enableGeofencing": false,
+  "batchSize": 10,
+  "outputConfig": {
+    "uiMapping": [],
+    "aiInstructions": "",
+    "excelMapping": [],
+    "isDynamicUI": true
+  },
+  "mtime": 1770229558769
 }

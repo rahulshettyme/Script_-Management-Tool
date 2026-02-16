@@ -1,6 +1,13 @@
 // =============================================
-// DATA GENERATE SCRIPT
+// DATA GENERATE SCRIPT (Production Environment)
 // =============================================
+/**
+ * CRITICAL ARCHITECTURE RULE:
+ * This file handles the "Bulk Execution" of scripts (Production).
+ * The Development/Test logic is located in `Data Generate/script_management_v2.js`.
+ * 
+ * Logic regarding Attributes, API URLs, and Data Injection MUST match `script_management_v2.js`.
+ */
 
 // State
 let authToken = null;
@@ -26,6 +33,7 @@ async function loadEnvUrls() {
         console.error('Failed to load env URLs:', e);
     }
 }
+
 
 // Helper to get URLs for environment
 function getEnvUrls(environment) {
@@ -130,7 +138,7 @@ const elements = {
     // Login elements replaced by component but we keep session container
     sessionContainer: document.getElementById('session-container'),
     sessionInfo: document.getElementById('session-info'),
-    logoutBtn: document.getElementById('logout-btn'),
+
     fileUploadArea: document.getElementById('file-upload-area'),
     fileUpload: document.getElementById('file-upload'),
     fileName: document.getElementById('file-name'),
@@ -180,7 +188,14 @@ const elements = {
 
     // Script Description
     scriptDescriptionContainer: document.getElementById('script-description-container'),
-    scriptDescriptionText: document.getElementById('script-description-text')
+    scriptDescriptionText: document.getElementById('script-description-text'),
+
+    // Area Audit V2 Elements
+    v2SpecificConfig: document.getElementById('v2-specific-config'),
+    v2AreaSize: document.getElementById('v2-area-size'),
+    v2AreaUnit: document.getElementById('v2-area-unit'),
+    v2LocationName: document.getElementById('v2-location-name'),
+    v2ResolveBtn: document.getElementById('v2-resolve-btn')
 };
 
 // =============================================
@@ -223,6 +238,7 @@ async function loadCustomScripts() {
                 filename: script.filename || script.name,
                 requiresLogin: script.requiresLogin,
                 allowAdditionalAttributes: script.allowAdditionalAttributes,
+                additionalAttributes: script.additionalAttributes || [],
                 isMultithreaded: script.isMultithreaded,
                 groupByColumn: script.groupByColumn,
                 batchSize: script.batchSize,
@@ -492,9 +508,21 @@ if (elements.enableAdditionalAttributes) {
     });
 }
 
-function handleScriptSelection(value) {
+async function handleScriptSelection(value) {
     resetState();
     selectedDataType = value;
+
+    // REFACTOR: Sync with Live Metadata first
+    try {
+        // Resolve Filename from Template if possible
+        let filenameForSync = value;
+        const potentialTemplate = TEMPLATES[value];
+        if (potentialTemplate && potentialTemplate.filename) {
+            filenameForSync = potentialTemplate.filename;
+        }
+        await syncTemplateWithLiveMeta(filenameForSync);
+    } catch (e) { console.warn("Live Sync failed, falling back to registry.", e); }
+
     const template = TEMPLATES[selectedDataType];
 
     // Show Description
@@ -512,7 +540,14 @@ function handleScriptSelection(value) {
 
     // Show/hide boundary config based on type
     // Updated to match filename-derived keys (underscores) and remove team restriction
-    const needsBoundary = (selectedDataType === 'Generate_Coordinates' || selectedDataType === 'Area_Audit' || selectedDataType === 'Generate Coordinates' || selectedDataType === 'Area Audit'); // Check both just in case
+    const needsBoundary = (
+        selectedDataType === 'Generate_Coordinates' ||
+        selectedDataType === 'Area_Audit' ||
+        selectedDataType === 'Generate Coordinates' ||
+        selectedDataType === 'Area Audit' ||
+        selectedDataType === 'Area Audit V2' ||
+        selectedDataType === 'Area_Audit_V2.py'
+    );
 
     if (needsBoundary) {
         elements.boundaryConfig.classList.remove('hidden');
@@ -561,6 +596,24 @@ function handleScriptSelection(value) {
         } else {
             targetLocationSection.classList.add('hidden');
             targetLocationSection.style.display = 'none';
+        }
+    }
+
+    // --- AREA AUDIT V2 VISIBILITY ---
+    if (elements.v2SpecificConfig) {
+        // Check filename or friendly name
+        const isV2 = value === 'Area_Audit_V2.py' || (template && template.name === 'Area Audit V2');
+
+        if (isV2) {
+            elements.v2SpecificConfig.classList.remove('hidden');
+            // Ensure parent boundary config is visible
+            elements.boundaryConfig.classList.remove('hidden');
+
+            // Hide standard geofence wrapper if it exists (but likely overlaps with boundaryConfig)
+            // If targetLocationSection is distinct, hide it. 
+            // In our case, boundaryConfig IS the container for inputs.
+        } else {
+            elements.v2SpecificConfig.classList.add('hidden');
         }
     }
 
@@ -1118,6 +1171,60 @@ if (elements.confirmImportBtn) {
         }
     });
 }
+// --------------------------------------------------------------------------
+// REFACTOR: Dynamic Template Generation
+// --------------------------------------------------------------------------
+// When a script is selected, we fetch its LIVE metadata to ensure Template is accurate.
+async function syncTemplateWithLiveMeta(scriptName) {
+    if (!scriptName) return;
+    // Ensure .py extension is present
+    if (!scriptName.endsWith('.py')) {
+        scriptName += '.py';
+    }
+    try {
+        console.log(`[Template Sync] Fetching live metadata for ${scriptName}...`);
+        const res = await fetch(`/api/scripts/content?filename=${scriptName}`);
+        if (!res.ok) throw new Error("Failed to fetch script content");
+
+        const data = await res.json();
+        const meta = data.meta;
+
+        if (meta && (meta.columns || meta.inputColumns || meta.expected_columns)) {
+            // Determine best source for columns
+            // 1. meta.columns (Full object)
+            // 2. meta.inputColumns (Alias)
+            // 3. meta.expected_columns (String array -> mapping)
+
+            let cols = meta.columns || meta.inputColumns;
+
+            // If cols is just strings (e.g. expected_columns), convert to objects
+            if (!cols && meta.expected_columns) {
+                cols = meta.expected_columns.map(c => ({ name: c, type: 'Data', description: 'Auto-detected' }));
+            }
+
+            if (cols && cols.length > 0) {
+                const currentTemplate = TEMPLATES[scriptName.replace('.py', '')] || TEMPLATES[scriptName];
+                if (currentTemplate) {
+                    console.log(`[Template Sync] Overriding registry columns with live metadata (${cols.length} cols).`);
+                    // Map to template format: { header: 'Name', key: 'Name' }
+                    currentTemplate.columns = cols.map(c => ({
+                        header: c.name || c,
+                        key: c.name || c,
+                        width: 20
+                    }));
+
+                    // Also sync other config if present
+                    if (meta.batchSize) currentTemplate.batchSize = meta.batchSize;
+                    if (meta.groupByColumn) currentTemplate.groupByColumn = meta.groupByColumn;
+                    if (meta.additionalAttributes) currentTemplate.additionalAttributes = meta.additionalAttributes;
+                }
+            }
+        }
+    } catch (e) {
+        console.warn("[Template Sync] Failed to sync with live metadata", e);
+    }
+}
+// --------------------------------------------------------------------------
 
 // =============================================
 // EXECUTE CUSTOM SCRIPT
@@ -1135,7 +1242,26 @@ if (elements.exportBtn) {
         if (!template) return;
 
         // Create Excel Template
-        const headers = template.columns.map(c => c.header);
+        let headers = template.columns.map(c => c.header);
+
+        // Add Additional Attributes if enabled
+        if (elements.enableAdditionalAttributes && elements.enableAdditionalAttributes.checked) {
+            let extraAttrs = [];
+
+            // 1. Prioritize Input Field (User Defined)
+            if (elements.additionalAttributesInput && elements.additionalAttributesInput.value.trim()) {
+                extraAttrs = elements.additionalAttributesInput.value.split(',').map(s => s.trim()).filter(s => s);
+            }
+            // 2. Fallback to Template Definition (Legacy)
+            else if (template.additionalAttributes) {
+                extraAttrs = template.additionalAttributes.map(attr => attr.name || attr);
+            }
+
+            if (extraAttrs.length > 0) {
+                headers = [...headers, ...extraAttrs];
+            }
+        }
+
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.json_to_sheet([], { header: headers });
 
@@ -1206,16 +1332,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Logout Hook
-    if (elements.logoutBtn) {
-        elements.logoutBtn.addEventListener('click', () => {
-            // Trigger logout in component if possible, or just local fullLogout
-            // Component usually handles its own UI, but we have external logout btn too?
-            // The component has its own internal state.
-            // If we access the instance 'loginComponent', we can call logout.
-            // But we didn't assign the instance to a global var in the snippet above.
-            // Let's fix that.
-        });
-    }
+
 });
 
 
@@ -1252,11 +1369,17 @@ if (elements.executeBtn) {
                 let pass = 0;
                 let fail = 0;
 
-                updateProgress(0, total, 0, 0);
+                // [BATCHING LOGIC START]
+                // Retrieve batchSize from template or default to 10
+                const template = TEMPLATES[selectedDataType] || {};
+                // Ensure batchSize is a valid number > 0
+                let batchSize = parseInt(template.batchSize);
+                if (isNaN(batchSize) || batchSize <= 0) batchSize = 10;
 
-                // 3. Send to Backend
-                // We send ALL rows at once now (Backend handles batch/loop if needed, or we just rely on the script)
-                // The new backend endpoint expects: { scriptName, rows, token, envConfig }
+                console.log(`[Execute] Total Rows: ${total}, Batch Size: ${batchSize}`);
+
+                executionResults = []; // Initialize accumulator
+                updateProgress(0, total, 0, 0);
 
                 // Get Env Config
                 const envData = getEnvUrls(currentEnvironment);
@@ -1275,83 +1398,154 @@ if (elements.executeBtn) {
                         maxLong: elements.maxLong ? elements.maxLong.value : '',
                         locationName: elements.locationName ? elements.locationName.value : ''
                     },
-                    targetLocation: document.getElementById('target-location-input') ? document.getElementById('target-location-input').value : ''
+                    targetLocation: (elements.v2LocationName && elements.v2LocationName.value) ? elements.v2LocationName.value : (document.getElementById('target-location-input') ? document.getElementById('target-location-input').value : ""),
+                    area_size: (elements.v2AreaSize && !elements.v2SpecificConfig.classList.contains('hidden')) ? elements.v2AreaSize.value : undefined,
+                    area_unit: (elements.v2AreaUnit && !elements.v2SpecificConfig.classList.contains('hidden')) ? elements.v2AreaUnit.value : undefined,
+                    allowAdditionalAttributes: elements.enableAdditionalAttributes ? elements.enableAdditionalAttributes.checked : false,
+                    additionalAttributes: (elements.enableAdditionalAttributes && elements.enableAdditionalAttributes.checked)
+                        ? (elements.additionalAttributesInput && elements.additionalAttributesInput.value ? elements.additionalAttributesInput.value.split(',').map(s => s.trim()).filter(k => k) : [])
+                        : []
                 };
 
                 try {
-                    const scriptFilename = TEMPLATES[selectedDataType] ? TEMPLATES[selectedDataType].filename : selectedDataType;
+                    const scriptFilename = template.filename || selectedDataType;
 
                     // [V2 ROUTING]
-                    // Check if we should use the new Modular Executor
-                    // We default to V2 unless it's a known Legacy script
                     const LEGACY_SCRIPTS = ['Area_Audit', 'Area Audit', 'Area_Audit.py'];
-                    const isLegacy = LEGACY_SCRIPTS.some(n => selectedDataType.includes(n)) || (TEMPLATES[selectedDataType] && TEMPLATES[selectedDataType].isLegacy);
+                    const isLegacy = LEGACY_SCRIPTS.some(n => selectedDataType.includes(n)) || (template.isLegacy);
+                    const useV2 = !isLegacy && typeof ScriptExecutorV2 !== 'undefined';
 
-                    if (!isLegacy && typeof ScriptExecutorV2 !== 'undefined') {
-                        console.log(`[Execute] Routing '${selectedDataType}' to ScriptExecutorV2...`);
-                        const executor = new ScriptExecutorV2({ apiBaseUrl: apiBaseUrl, debug: true });
+                    if (useV2) {
+                        // [V2 UPDATE] Additional Attributes Logic
+                        if (elements.additionalAttributesInput && elements.additionalAttributesInput.value.trim()) {
+                            const keysToManage = elements.additionalAttributesInput.value.split(',').map(s => s.trim()).filter(k => k);
+                            const isEnabled = elements.enableAdditionalAttributes && elements.enableAdditionalAttributes.checked;
 
-                        // Execute
-                        const v2Results = await executor.execute(scriptFilename, rows, authToken, config, config.boundary);
+                            if (!isEnabled) {
+                                console.log("[Execute] Stripping Additional Attributes (Disabled):", keysToManage);
+                                rows.forEach(row => {
+                                    keysToManage.forEach(k => {
+                                        delete row[k];
+                                    });
+                                });
+                            } else {
+                                console.log("[Execute] Allowing Additional Attributes (Enabled):", keysToManage);
+                            }
+                        }
+                    }
 
-                        // Render Results (Shared UI Logic)
-                        executionResults = v2Results;
-                        renderExecutionResults();
+                    // [GROUPING & BATCHING LOGIC]
+                    // 1. Pre-process rows into "Execution Units".
+                    //    - If Grouping: One Unit = Array of rows belonging to one key.
+                    //    - If No Grouping: One Unit = Single Row.
 
-                        // Stats
-                        pass = executionResults.filter(r => {
+                    let executionUnits = [];
+                    const groupByCol = template.groupByColumn;
+
+                    if (groupByCol && groupByCol.trim()) {
+                        console.log(`[Execute] Grouping by column: '${groupByCol}'`);
+
+                        // Group rows efficiently
+                        const groups = new Map();
+                        rows.forEach(row => {
+                            const key = row[groupByCol] || 'UNK';
+                            if (!groups.has(key)) groups.set(key, []);
+                            groups.get(key).push(row);
+                        });
+
+                        // Convert Map values to Units (Array of Arrays)
+                        executionUnits = Array.from(groups.values());
+                        console.log(`[Execute] Formed ${executionUnits.length} Groups from ${rows.length} Rows.`);
+
+                    } else {
+                        // No grouping, each row is a unit
+                        executionUnits = rows;
+                    }
+
+                    // 2. Form Batches from Units
+                    // We must NOT split a Unit across batches.
+                    // However, if a single Unit is larger than batchSize, it must stand alone in a batch (or overflow).
+
+                    const batches = [];
+                    let currentBatch = [];
+                    let currentBatchSize = 0;
+
+                    for (const unit of executionUnits) {
+                        const unitRows = Array.isArray(unit) ? unit : [unit];
+                        const unitSize = unitRows.length;
+
+                        // If adding this unit exceeds batchSize AND we already have data, push current batch
+                        if (currentBatchSize + unitSize > batchSize && currentBatchSize > 0) {
+                            batches.push(currentBatch);
+                            currentBatch = [];
+                            currentBatchSize = 0;
+                        }
+
+                        // Add unit to current batch
+                        currentBatch = currentBatch.concat(unitRows);
+                        currentBatchSize += unitSize;
+                    }
+                    if (currentBatch.length > 0) batches.push(currentBatch);
+
+                    console.log(`[Execute] Prepared ${batches.length} Batches for execution.`);
+
+                    // 3. Process Batches
+                    for (let i = 0; i < batches.length; i++) {
+                        const chunk = batches[i];
+                        console.log(`[Execute] Processing Batch ${i + 1}/${batches.length} (${chunk.length} rows)`);
+
+                        let chunkResults = [];
+
+                        if (useV2) {
+                            // Call V2 Executor for Chunk
+                            const executor = new ScriptExecutorV2({ apiBaseUrl: apiBaseUrl, debug: false });
+                            chunkResults = await executor.execute(scriptFilename, chunk, authToken, config, config.boundary);
+                        } else {
+                            // Call Legacy Endpoint for Chunk
+                            const response = await fetch('/api/scripts/execute', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    scriptName: scriptFilename,
+                                    rows: chunk,
+                                    token: authToken,
+                                    envConfig: config
+                                })
+                            });
+
+                            if (!response.ok) {
+                                const err = await response.json();
+                                chunkResults = chunk.map(r => ({ ...r, status: 'Error', response: err.error || 'Batch Execution Failed' }));
+                            } else {
+                                chunkResults = await response.json();
+                            }
+                        }
+
+                        // Accumulate Results
+                        executionResults = executionResults.concat(chunkResults);
+
+                        // Update Progress immediately
+                        const chunkPass = chunkResults.filter(r => {
                             const s = String(r.status || r.Status || '').toLowerCase();
                             return s === 'success' || s === 'pass' || s === 'passed';
                         }).length;
-                        fail = executionResults.length - pass;
-                        updateProgress(total, total, pass, fail);
+                        const chunkFail = chunkResults.length - chunkPass;
 
-                        return; // Stop here, don't run legacy block
+                        pass += chunkPass;
+                        fail += chunkFail;
+                        processed += chunk.length;
+
+                        renderExecutionResults();
+                        updateProgress(processed, total, pass, fail);
+
+                        // Small delay to allow UI to breathe
+                        await new Promise(r => setTimeout(r, 50));
                     }
 
-                    // [LEGACY BLOCK FALLTHROUGH]
-                    console.log(`[Execute] Routing '${selectedDataType}' to Legacy Executor...`);
-
-                    const response = await fetch('/api/scripts/execute', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            scriptName: scriptFilename,
-                            rows: rows,
-                            token: authToken,
-                            envConfig: config
-                        })
-                    });
-
-                    if (!response.ok) {
-                        const err = await response.json();
-                        throw new Error(err.error || 'Execution failed');
-                    }
-
-                    const resultData = await response.json();
-                    // Expected format: Array of result objects with status/response
-
-                    // 4. Render Results
-                    executionResults = resultData;
-                    renderExecutionResults();
-
-                    // Calculate Stats
-                    pass = executionResults.filter(r => {
-                        const s = String(r.status || r.Status || '').toLowerCase();
-                        return s === 'success' || s === 'pass' || s === 'passed';
-                    }).length;
-                    fail = executionResults.length - pass;
-
-                    updateProgress(total, total, pass, fail);
 
                 } catch (error) {
-                    console.error('Execution Failed:', error);
-                    alert('Execution Failed: ' + error.message);
-                    // Add dummy fail row if empty?
-                    if (executionResults.length === 0) {
-                        executionResults.push({ row: '-', status: 'Error', response: error.message });
-                        renderExecutionResults();
-                    }
+                    console.error('Execution Critical Failure:', error);
+                    alert('Execution Interrupted: ' + error.message);
                 } finally {
                     completeExecution();
                 }
@@ -1364,6 +1558,77 @@ if (elements.executeBtn) {
         };
         reader.readAsArrayBuffer(file);
     });
+}
+
+// =============================================
+// AREA AUDIT V2 LOGIC
+// =============================================
+if (elements.v2ResolveBtn) {
+    console.log("[Init] V2 Resolve Button Found");
+    elements.v2ResolveBtn.addEventListener('click', async () => {
+        console.log("[V2] Resolve Clicked");
+        const locName = elements.v2LocationName.value.trim();
+        if (!locName) return alert("Please enter a location name.");
+
+        const btn = elements.v2ResolveBtn;
+        const originalText = btn.innerText;
+        btn.innerText = "⏳";
+        btn.disabled = true;
+
+        try {
+            // Use Backend Proxy (Server-Side Geocoding)
+            // This avoids loading the heavy Google Maps Client Library
+            const response = await fetch('/api/geocode', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ address: locName })
+            });
+
+            const data = await response.json();
+
+            btn.innerText = "📍 Resolve";
+            btn.disabled = false;
+
+            // Handle Proxy Response (Single Object with geometry) OR Raw Google Response (Array)
+            const geometry = data.geometry || (data.results && data.results[0] ? data.results[0].geometry : null);
+
+            if (geometry) {
+                console.log("[V2] Geocode Success:", data);
+
+                const bounds = geometry.bounds;
+                const viewport = geometry.viewport;
+                const finalBounds = bounds || viewport;
+
+                if (finalBounds) {
+                    // Google API returns { northeast: {lat, lng}, southwest: {lat, lng} }
+                    const ne = finalBounds.northeast;
+                    const sw = finalBounds.southwest;
+
+                    elements.maxLat.value = ne.lat;
+                    elements.maxLong.value = ne.lng;
+                    elements.minLat.value = sw.lat;
+                    elements.minLong.value = sw.lng;
+
+                    if (elements.boundaryConfig) elements.boundaryConfig.classList.remove('hidden');
+                } else {
+                    alert("Location found, but no boundary bounds returned.");
+                }
+            } else {
+                console.error("[V2] Geocode Failed:", data);
+                // Try to extract error message from raw google error if passed through
+                const errMsg = data.error_message || data.status || (data.error ? data.error : 'Unknown error');
+                alert('Geocode failed: ' + errMsg);
+            }
+
+        } catch (e) {
+            console.error("[V2] Error resolving boundary", e);
+            alert("Error resolving boundary: " + e.message);
+            btn.innerText = originalText;
+            btn.disabled = false;
+        }
+    });
+} else {
+    console.warn("[Init] V2 Resolve Button NOT Found");
 }
 
 

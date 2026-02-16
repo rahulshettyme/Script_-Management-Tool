@@ -408,10 +408,29 @@ function renderTable() {
         reusableTd.appendChild(reuseContainer);
 
 
+        // 5. Actions Column (Delete)
+        const actionsTd = document.createElement('td');
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'action-btn';
+        deleteBtn.innerHTML = '🗑️'; // Trash icon
+        deleteBtn.title = 'Delete Script';
+        deleteBtn.style.color = '#ef4444'; // Red
+        deleteBtn.style.borderColor = '#ef4444';
+        deleteBtn.style.marginLeft = '0'; // align left or center
+
+        deleteBtn.onmouseover = () => { deleteBtn.style.background = 'rgba(239, 68, 68, 0.1)'; };
+        deleteBtn.onmouseout = () => { deleteBtn.style.background = 'transparent'; };
+
+        deleteBtn.onclick = () => deleteScript(script);
+
+        actionsTd.appendChild(deleteBtn);
+
+
         tr.appendChild(nameTd);
         tr.appendChild(statusTd);
         tr.appendChild(teamTd);
         tr.appendChild(reusableTd);
+        tr.appendChild(actionsTd);
 
         tbody.appendChild(tr);
     });
@@ -558,3 +577,28 @@ async function handleDescriptionUpdate(script, newDesc) {
     }
 }
 
+async function deleteScript(script) {
+    const confirmMsg = `Are you sure you want to delete "${script.name}"?\n\nThis will permanently delete the script file and configuration.`;
+    if (!confirm(confirmMsg)) return;
+
+    try {
+        const res = await fetch('/api/scripts/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename: script.filename })
+        });
+        const data = await res.json();
+
+        if (data.success) {
+            // Remove from local list
+            allScripts = allScripts.filter(s => s.filename !== script.filename);
+            // Re-filter and render
+            filterTable();
+        } else {
+            alert('Delete failed: ' + data.error);
+        }
+    } catch (e) {
+        console.error("Delete network error:", e);
+        alert('Delete failed: ' + e.message);
+    }
+}
