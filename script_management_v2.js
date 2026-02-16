@@ -1538,7 +1538,7 @@ async function runTest() {
             targetLocation: targetLoc,
             allowAdditionalAttributes: document.getElementById('allowAdditionalAttributes') ? document.getElementById('allowAdditionalAttributes').checked : false,
             additionalAttributes: document.getElementById('useTestAttributes') && document.getElementById('useTestAttributes').checked ?
-                document.getElementById('testAttributes').value : "",
+                document.getElementById('testAttributes').value.split(',').map(s => s.trim()).filter(s => s) : [],
             // Merge V2 Params if active
             ...(window.getAreaAuditV2Params ? window.getAreaAuditV2Params() : {})
         };
