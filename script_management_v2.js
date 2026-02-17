@@ -1125,6 +1125,7 @@ function addStep(type) {
                         <option value="project">Project</option>
                         <option value="farmertag">Farmer Tag</option>
                         <option value="assettag">Asset Tag</option>
+                        <option value="plottag">Plot Tag</option>
                     </select>
                 </div>
                 <div>
@@ -1201,7 +1202,8 @@ function updateMasterTypeInfo(select) {
         'irrigationtype': { runMethod: 'once', suffix: '_id' },
         'project': { runMethod: 'once', suffix: '_id' },
         'farmertag': { runMethod: 'once', suffix: '_id' },
-        'assettag': { runMethod: 'once', suffix: '_id' }
+        'assettag': { runMethod: 'once', suffix: '_id' },
+        'plottag': { runMethod: 'once', suffix: '_id' }
     };
 
     if (masterType && masterConfig[masterType]) {
@@ -1536,6 +1538,7 @@ async function runTest() {
             environment: window.globalEnv || "QA2",
             apiBaseUrl: (envConfig.apiurl && envConfig.apiurl[window.globalEnv || "QA2"]) || "",
             targetLocation: targetLoc,
+            batchSize: document.getElementById('threadSize') ? document.getElementById('threadSize').value : 1,
             allowAdditionalAttributes: document.getElementById('allowAdditionalAttributes') ? document.getElementById('allowAdditionalAttributes').checked : false,
             additionalAttributes: document.getElementById('useTestAttributes') && document.getElementById('useTestAttributes').checked ?
                 document.getElementById('testAttributes').value.split(',').map(s => s.trim()).filter(s => s) : [],
@@ -1880,13 +1883,39 @@ function buildDescriptionFromSteps(name, globalCols, steps) {
             const method = step.querySelector('.step-method').value;
             const endpoint = step.querySelector('.step-endpoint').value;
             const payloadType = step.querySelector('.step-payload-type').value;
-            const payload = step.querySelector('.step-payload').value;
+            let payload = step.querySelector('.step-payload').value;
             const response = step.querySelector('.step-response').value;
             const instruction = step.querySelector('.step-instruction').value;
 
             // New: Run Once Flag
             const isRunOnceEl = step.querySelector('.step-run-once');
             const isRunOnce = isRunOnceEl ? isRunOnceEl.checked : false;
+
+            // FIX: Auto-extract query parameters from endpoint for QUERY type payloads
+            // This ensures ALL parameters (like size=5000) are included in the generation prompt
+            if (payloadType === 'QUERY' && endpoint && endpoint.includes('?')) {
+                const [basePath, queryString] = endpoint.split('?');
+                const params = new URLSearchParams(queryString);
+                const paramsObj = {};
+                params.forEach((value, key) => {
+                    paramsObj[key] = value;
+                });
+
+                // If user didn't provide a payload example, auto-generate from query params
+                if (!payload || payload.trim() === '') {
+                    payload = JSON.stringify(paramsObj);
+                } else {
+                    // If user provided partial payload, merge with extracted params
+                    try {
+                        const userPayload = JSON.parse(payload);
+                        const mergedPayload = { ...paramsObj, ...userPayload };
+                        payload = JSON.stringify(mergedPayload);
+                    } catch (e) {
+                        // If payload is not valid JSON, use extracted params
+                        payload = JSON.stringify(paramsObj);
+                    }
+                }
+            }
 
             description += `  - Step/Variable Name: ${apiName}\n`;
             description += `  - Call ${method} ${endpoint}\n`;
