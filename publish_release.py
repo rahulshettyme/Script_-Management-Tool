@@ -17,7 +17,6 @@ INCLUDE_PATHS = [
     "System",           # Whole folder
     "Manager",          # Whole folder (filtered inside)
     "Converted Scripts",# Whole folder (filtered inside)
-    "Script Configs",   # Whole folder
     "components"        # Whole folder
 ]
 

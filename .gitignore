@@ -41,3 +41,9 @@ Thumbs.db
 System/secrets.json
 TEST_DEPLOYMENT_TARGET/
 Data_Generate_Deploy/
+
+# --- GENERATED TEST FILES ---
+Converted Scripts/TEST_*.py
+Converted Scripts/DraftTest.py
+Converted Scripts/TestScript.py
+Converted Scripts/*.txt
