@@ -48,6 +48,13 @@ def load_config_and_secrets(env_config):
         
     if gemini_key and 'google_api_key' not in env_config:
         env_config['google_api_key'] = gemini_key
+
+    # Parity Sync: Ensure base_url/apiurl/apiBaseUrl are synchronized if one is present
+    url = env_config.get('apiBaseUrl') or env_config.get('apiurl') or env_config.get('base_url')
+    if url:
+        if 'apiBaseUrl' not in env_config: env_config['apiBaseUrl'] = url
+        if 'apiurl' not in env_config: env_config['apiurl'] = url
+        if 'base_url' not in env_config: env_config['base_url'] = url
     
     return env_config
 

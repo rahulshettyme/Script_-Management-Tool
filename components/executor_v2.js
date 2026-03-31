@@ -48,13 +48,13 @@ class ScriptExecutorV2 {
     async execute(scriptName, rows, token, envConfig, meta = {}) {
         if (!scriptName) throw new Error('Script Name is required');
         if (!rows || rows.length === 0) throw new Error('No data rows to process');
-        if (!token) throw new Error('Auth Token is missing');
+        // Token is optional. Scripts that require it will fail later if it's missing.
 
         const payload = this.preparePayload(scriptName, rows, token, envConfig, meta);
 
-        if (this.debug) {
+        if (true) { // [DEBUG] Enable logging to find missing parameters
             console.log('[ExecutorV2] Execute called with envConfig:', envConfig);
-            console.log('[ExecutorV2] Payload:', payload);
+            console.log('[ExecutorV2] Payload being sent:', payload);
         }
 
         try {

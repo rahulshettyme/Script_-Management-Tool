@@ -1,41 +1,32 @@
-# Use Python 3.9 Slim as the base image
-FROM python:3.9-slim
+FROM ubuntu:22.04
 
-# Set working directory
-WORKDIR /app
+ENV DEBIAN_FRONTEND=noninteractive
+ENV NODE_VERSION=20
 
-# Install system dependencies and Node.js
-# We need curl to download Node setup, and build-essential for potential python package compilation
 RUN apt-get update && apt-get install -y \
     curl \
-    gnupg \
+    python3 \
+    python3-pip \
+    python3-venv \
+    libgdal-dev \
+    libproj-dev \
+    libspatialindex-dev \
     build-essential \
-    && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && ln -s /usr/bin/python3 /usr/bin/python \
+    && curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
     && apt-get install -y nodejs \
-    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Verify versions
-RUN node -v && npm -v && python --version
+WORKDIR /app
 
-# Copy Python Requirements
-COPY requirements.txt .
+COPY requirements.txt ./
+RUN python -m pip install --no-cache-dir -r requirements.txt
 
-# Install Python Dependencies
-# --no-cache-dir to keep image light
-RUN pip install --no-cache-dir -r requirements.txt
+COPY package.json ./
+RUN npm install --ignore-scripts
 
-# Copy Node.js Requirements
-COPY package*.json ./
-
-# Install Node.js Dependencies
-RUN npm install
-
-# Copy Application Source Code
 COPY . .
 
-# Expose the application port
 EXPOSE 3001
 
-# Start the application
 CMD ["npm", "start"]

@@ -45,7 +45,7 @@ def generate_heuristic_script(description):
         url_var = f"{v_name}_url"
         code = f"""
             # API Step: {v_name}
-            {url_var} = f"{{base_url}}{u}"
+            {url_var} = f"{{env_config.get('apiBaseUrl')}}{u}"
             payload = {{}} # Construct from: {pay}
             {v_name} = requests.{meth.lower()}({url_var}, json=payload, headers={{'Authorization': token}})
             row['{v_name}_status'] = {v_name}.status_code
@@ -322,7 +322,7 @@ def generate_script(description, is_multithreaded=True, input_columns=None, allo
     
     prompt += """
 
-CRITICAL URL HANDLING: When constructing API URLs using env_config base_url, do NOT use `urljoin` with a path starting with `/`. It will destroy the path component (e.g. /qa7) of the base URL. Use f-strings like `f'{base_url}/my/api'` or ensure relative paths."""
+CRITICAL URL HANDLING: When constructing API URLs using env_config apiBaseUrl, do NOT use `urljoin` with a path starting with `/`. It will destroy the path component (e.g. /qa7) of the base URL. Use f-strings like `f"{env_config.get('apiBaseUrl')}/my/api"` or ensure relative paths."""
     
     # Add thread_utils requirements if multithreaded
     if is_multithreaded:

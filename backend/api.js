@@ -37,12 +37,25 @@ const readSecrets = () => {
     return {};
 };
 
-// Initialize API Key from Environment > Secrets File > DB File (Legacy)
-const dbData = readDb();
-const secretsData = readSecrets();
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || secretsData.google_api_key || secretsData.gemini_api_key || dbData.google_api_key || dbData.gemini_api_key || "";
-// Specific Key for Geocoding (User Request)
-const GEOCODING_API_KEY = process.env.Geocoding_api_key || process.env.GEOCODING_API_KEY || secretsData.Geocoding_api_key || GOOGLE_API_KEY;
+// Helper to resolve API Keys dynamically (Environment > Secrets File > DB File)
+const getGoogleApiKey = () => {
+    const db = readDb();
+    const secrets = readSecrets();
+    return process.env.GOOGLE_API_KEY ||
+        secrets.google_api_key ||
+        secrets.gemini_api_key ||
+        db.google_api_key ||
+        db.gemini_api_key || "";
+};
+
+const getGeocodingApiKey = () => {
+    const secrets = readSecrets();
+    return process.env.Geocoding_api_key ||
+        process.env.GEOCODING_API_KEY ||
+        process.env.GOOGLE_MAPS_API_KEY ||
+        secrets.Geocoding_api_key ||
+        getGoogleApiKey();
+};
 
 
 // Helper to write DB
@@ -148,9 +161,9 @@ module.exports = function (app) {
 
         let geocodeUrl;
         if (address) {
-            geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${GEOCODING_API_KEY}`;
+            geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${getGeocodingApiKey()}`;
         } else if (lat !== undefined && lng !== undefined) {
-            geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GEOCODING_API_KEY}`;
+            geocodeUrl = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${getGeocodingApiKey()}`;
         } else {
             return res.status(400).json({ error: 'Missing address or lat/lng parameters' });
         }
@@ -753,11 +766,40 @@ module.exports = function (app) {
     // 2. Execute Python Script
     // --- Config Endpoints ---
     app.get('/api/config/maps-key', (req, res) => {
-        if (GOOGLE_API_KEY) {
-            res.json({ key: GOOGLE_API_KEY });
+        const key = getGoogleApiKey();
+        if (key) {
+            res.json({ key: key });
         } else {
             res.status(404).json({ error: "No API Key configured" });
         }
+    });
+
+    // Diagnostic endpoint to check which keys are detected (securely)
+    app.get('/api/config/check-keys', (req, res) => {
+        const secrets = readSecrets();
+        const db = readDb();
+
+        res.json({
+            detection: {
+                env: {
+                    Geocoding_api_key: !!process.env.Geocoding_api_key,
+                    GEOCODING_API_KEY: !!process.env.GEOCODING_API_KEY,
+                    GOOGLE_MAPS_API_KEY: !!process.env.GOOGLE_MAPS_API_KEY,
+                    GOOGLE_API_KEY: !!process.env.GOOGLE_API_KEY
+                },
+                secrets_file: {
+                    Geocoding_api_key: !!secrets.Geocoding_api_key,
+                    google_api_key: !!secrets.google_api_key
+                },
+                db_file: {
+                    google_api_key: !!db.google_api_key
+                }
+            },
+            resolved: {
+                geocoding_ready: !!getGeocodingApiKey(),
+                google_ready: !!getGoogleApiKey()
+            }
+        });
     });
 
     // 1. Execute Script
@@ -767,10 +809,14 @@ module.exports = function (app) {
         console.log('\n--- NEW SCRIPT EXECUTION STARTED ---\n');
 
         const { scriptName, rows, token, envConfig } = req.body;
+        console.log(`[DEBUG] /api/scripts/execute - Body Keys: ${Object.keys(req.body || {}).join(', ')}`);
+        console.log(`[DEBUG] scriptName: ${scriptName}, rows length: ${rows ? rows.length : 'N/A'}`);
 
-        if (!scriptName || !rows || !token) {
+        if (!scriptName || !rows) {
             return res.status(400).json({ error: 'Missing required parameters' });
         }
+
+        const finalToken = token || "";
 
         // [Fix for Parity with Test Run] Inject apiBaseUrl if missing
         if (envConfig && envConfig.environment) {
@@ -778,8 +824,9 @@ module.exports = function (app) {
             const { apiBaseUrl } = getEnvUrls(envConfig.environment);
             if (apiBaseUrl) {
                 envConfig.apiBaseUrl = apiBaseUrl;
-                // Also ensure 'apiurl' is set as some legacy scripts use this
+                // Also ensure 'apiurl' and 'base_url' are set for parity with legacy/hallucinated scripts
                 if (!envConfig.apiurl) envConfig.apiurl = apiBaseUrl;
+                if (!envConfig.base_url) envConfig.base_url = apiBaseUrl;
             }
         }
 
@@ -840,7 +887,7 @@ module.exports = function (app) {
             bridgePath,
             "--script", scriptPath,
             "--data-file", dataFilePath,
-            "--token", token,
+            "--token", finalToken,
             "--env", JSON.stringify(envConfig || {}),
             "--columns", JSON.stringify(columns)
         ];
@@ -855,6 +902,7 @@ module.exports = function (app) {
         console.log(`[Execute] Env Config:`, JSON.stringify(envConfig));
 
         const runner = spawn('python', ['-u', ...args], {
+            windowsHide: true,
             env: {
                 ...process.env,
                 PYTHONIOENCODING: 'utf-8',
@@ -862,7 +910,7 @@ module.exports = function (app) {
                 PYTHONPATH: process.env.PYTHONPATH
                     ? process.env.PYTHONPATH + path.delimiter + path.join(__dirname, '..')
                     : path.join(__dirname, '..'),
-                GOOGLE_API_KEY: GOOGLE_API_KEY
+                GOOGLE_API_KEY: getGoogleApiKey()
             }
         });
 
@@ -920,6 +968,18 @@ module.exports = function (app) {
                     return res.status(500).json({ error: result.message, trace: result.traceback });
                 }
 
+                // [401 PROPAGATION]
+                // Scan results for session timeout indicators (Status: 401)
+                const hasUnauthorizedError = Array.isArray(result.data) && result.data.some(row => {
+                    const responseText = String(row.Response || row.response || '');
+                    return responseText.includes('Status: 401');
+                });
+
+                if (hasUnauthorizedError) {
+                    console.warn('[Execute] Detected Session Timeout (401) in script results. Propagating 401 status.');
+                    return res.status(401).json(result.data);
+                }
+
                 res.json(result.data);
 
             } catch (e) {
@@ -971,7 +1031,7 @@ module.exports = function (app) {
         // Determine token base URL based on environment
         const { ssoPrefix, ssoSuffix } = getEnvUrls(environment);
         const tokenBase = ssoPrefix;
-        const tokenUrl = `${tokenBase}${tenant.toLowerCase()}${ssoSuffix}`;
+        const tokenUrl = `${tokenBase}${tenant}${ssoSuffix}`;
 
         console.log(`[User Aggregate] Token URL: ${tokenUrl}`);
 
@@ -1260,10 +1320,37 @@ module.exports = function (app) {
         pythonProcess.stdin.write(code);
         pythonProcess.stdin.end();
 
+        // Set a timeout to prevent indefinite hanging (90 seconds)
+        const ANALYZE_TIMEOUT_MS = 90000;
+        let processCompleted = false;
+        let timeoutHandle = setTimeout(() => {
+            if (!processCompleted) {
+                console.error('[Analyze] TIMEOUT: Process exceeded 90 seconds. Killing process.');
+                pythonProcess.kill('SIGTERM');
+
+                // Give it 2 seconds to cleanup, then force kill
+                setTimeout(() => {
+                    if (!processCompleted) {
+                        console.error('[Analyze] Force killing process.');
+                        pythonProcess.kill('SIGKILL');
+                    }
+                }, 2000);
+
+                return res.status(500).json({
+                    error: 'Analysis timeout',
+                    details: 'The script analysis exceeded 90 seconds and was terminated. This might be due to AI latency or script complexity.'
+                });
+            }
+        }, ANALYZE_TIMEOUT_MS);
+
         pythonProcess.on('close', (code) => {
-            if (code !== 0) {
+            processCompleted = true;
+            clearTimeout(timeoutHandle);
+            if (code !== 0 && !res.headersSent) {
                 return res.status(500).json({ error: 'Analysis failed', details: stderrData });
             }
+            if (res.headersSent) return; // Already handled by timeout
+
             try {
                 const delimiter = '---JSON_START---';
                 const parts = stdoutData.split(delimiter);
@@ -1283,7 +1370,8 @@ module.exports = function (app) {
     app.post('/api/scripts/test-run', async (req, res) => {
         console.log('[Test Run] Received Request.');
         const { code, rows, token, envConfig, columns } = req.body;
-        if (!code || !rows || !token) return res.status(400).json({ error: 'Missing parameters' });
+        if (!code || !rows) return res.status(400).json({ error: 'Missing parameters' });
+        const finalToken = token || "";
 
         // Inject apiBaseUrl from DB if environment is present
         if (envConfig && envConfig.environment) {
@@ -1293,6 +1381,7 @@ module.exports = function (app) {
 
             if (apiBaseUrl) {
                 envConfig.apiBaseUrl = apiBaseUrl;
+                if (!envConfig.base_url) envConfig.base_url = apiBaseUrl;
             }
 
         } else {
@@ -1358,7 +1447,7 @@ module.exports = function (app) {
             bridgePath,
             "--script", tempPath,
             "--data", JSON.stringify(rows),
-            "--token", token,
+            "--token", finalToken,
             "--env", JSON.stringify(envConfig || {}),
             "--columns", JSON.stringify(columns || []),
             "--debug" // ENABLE DEBUG LOGGING FOR TEST RUN
@@ -1599,6 +1688,7 @@ module.exports = function (app) {
                     }
 
                     const pyProc = spawn('python', args, {
+                        windowsHide: true,
                         env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
                     });
                     let result = '';
@@ -1923,6 +2013,7 @@ module.exports = function (app) {
         const reverserPath = path.join(__dirname, '..', 'Manager', 'script_reverser.py');
 
         const pythonProcess = spawn('python', [reverserPath], {
+            windowsHide: true,
             env: { ...process.env, PYTHONIOENCODING: 'utf-8', GOOGLE_API_KEY: GOOGLE_API_KEY }
         });
 

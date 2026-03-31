@@ -74,10 +74,21 @@ function resetState() {
 
     // Reset UI
     if (elements.fileName) elements.fileName.textContent = 'Supported formats: .xlsx, .xls';
-    if (elements.fileUpload) elements.fileUpload.value = '';
+    if (elements.fileUpload) {
+        elements.fileUpload.value = '';
+        elements.fileUpload.setAttribute('accept', '.xlsx, .xls');
+    }
     if (elements.executeBtn) {
         elements.executeBtn.disabled = true;
         elements.executeBtn.textContent = '🚀 Execute Data Creation';
+    }
+    if (elements.uploadLabel) elements.uploadLabel.textContent = '📂 Choose Excel File';
+    if (elements.importBtn) elements.importBtn.textContent = '📤 Login and Import Template';
+    if (elements.loginSection) elements.loginSection.classList.add('hidden');
+    if (elements.uploadWorkflowContainer) {
+        elements.uploadWorkflowContainer.classList.add('disabled-area');
+        elements.uploadWorkflowContainer.style.opacity = '0.5';
+        elements.uploadWorkflowContainer.style.pointerEvents = 'none';
     }
     if (elements.resultsSection) elements.resultsSection.classList.add('hidden');
     if (elements.progressBar) elements.progressBar.style.width = '0%';
@@ -142,6 +153,7 @@ const elements = {
     fileUploadArea: document.getElementById('file-upload-area'),
     fileUpload: document.getElementById('file-upload'),
     fileName: document.getElementById('file-name'),
+    uploadLabel: document.querySelector('.upload-label'),
     executeBtn: document.getElementById('execute-btn'),
     resultsSection: document.getElementById('results-section'),
     progressText: document.getElementById('progress-text'),
@@ -195,7 +207,9 @@ const elements = {
     v2AreaSize: document.getElementById('v2-area-size'),
     v2AreaUnit: document.getElementById('v2-area-unit'),
     v2LocationName: document.getElementById('v2-location-name'),
-    v2ResolveBtn: document.getElementById('v2-resolve-btn')
+    v2ResolveBtn: document.getElementById('v2-resolve-btn'),
+    // Start Row
+    startRowInput: document.getElementById('start-row-input')
 };
 
 // =============================================
@@ -587,6 +601,38 @@ async function handleScriptSelection(value) {
         elements.templateInfo.classList.add('hidden');
     }
 
+    // Dynamic File Format Hint & Login Requirement
+    const isGeoJsonConverter = selectedDataType === 'GeoJson_To_Excel_Converter' || (template && template.filename === 'GeoJson_To_Excel_Converter.py');
+    const noLoginRequired = template && template.requiresLogin === false;
+
+    if (isGeoJsonConverter) {
+        if (elements.fileName) elements.fileName.textContent = 'Supported formats: .xlsx, .xls, .json, .geojson (Recommended for large datasets)';
+        if (elements.fileUpload) elements.fileUpload.setAttribute('accept', '.xlsx, .xls, .json, .geojson');
+        if (elements.uploadLabel) elements.uploadLabel.textContent = '📂 Choose File (Excel, JSON or GeoJSON)';
+    } else {
+        if (elements.fileName) elements.fileName.textContent = 'Supported formats: .xlsx, .xls';
+        if (elements.fileUpload) elements.fileUpload.setAttribute('accept', '.xlsx, .xls');
+        if (elements.uploadLabel) elements.uploadLabel.textContent = '📂 Choose Excel File';
+    }
+
+    if (noLoginRequired) {
+        if (elements.importBtn) {
+            elements.importBtn.disabled = false;
+            elements.importBtn.textContent = '📤 Import Template';
+        }
+        // Show upload area immediately for non-login scripts
+        if (elements.loginSection) elements.loginSection.classList.remove('hidden');
+        if (elements.loginComponentContainer) elements.loginComponentContainer.classList.add('hidden');
+        if (elements.uploadWorkflowContainer) {
+            elements.uploadWorkflowContainer.classList.remove('disabled-area');
+            elements.uploadWorkflowContainer.style.opacity = '1';
+            elements.uploadWorkflowContainer.style.pointerEvents = 'auto';
+        }
+    } else {
+        if (elements.loginComponentContainer) elements.loginComponentContainer.classList.remove('hidden');
+        // Standard flow handles enabling via login
+    }
+
     // Show/Hide Dynamic Geofencing Section based on Template Metadata
     const targetLocationSection = document.getElementById('target-location-section');
     if (targetLocationSection) {
@@ -928,24 +974,41 @@ if (elements.fileUpload) {
 }
 
 function processFile(file) {
+    const isJson = file.name.toLowerCase().endsWith('.json') || file.name.toLowerCase().endsWith('.geojson');
     const reader = new FileReader();
+
     reader.onload = (e) => {
         try {
-            const data = new Uint8Array(e.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const sheetName = workbook.SheetNames[0];
-            const sheet = workbook.Sheets[sheetName];
-            uploadedData = XLSX.utils.sheet_to_json(sheet);
+            if (isJson) {
+                // Handling Direct JSON/GeoJSON Upload
+                const text = e.target.result;
+                const jsonContent = JSON.parse(text);
+                // Wrap in a virtual row that the script expects
+                uploadedData = [{ "GeoJSON_Data": jsonContent }];
+                console.log('Processed JSON/GeoJSON File Data (Virtual Row Created)');
+            } else {
+                // Standard Excel Upload
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const sheet = workbook.Sheets[sheetName];
+                uploadedData = XLSX.utils.sheet_to_json(sheet);
+                console.log('Processed Excel File Data:', uploadedData);
+            }
 
-            console.log('Processed File Data:', uploadedData);
             elements.executeBtn.disabled = false;
             elements.executeBtn.textContent = '🚀 Execute Data Creation'; // Ready
         } catch (error) {
             console.error('Error processing file:', error);
-            alert('Error processing file. Please ensure it is a valid Excel file.');
+            alert(`Error processing file. Please ensure it is a valid ${isJson ? 'JSON' : 'Excel'} file.`);
         }
     };
-    reader.readAsArrayBuffer(file);
+
+    if (isJson) {
+        reader.readAsText(file);
+    } else {
+        reader.readAsArrayBuffer(file);
+    }
 }
 
 
@@ -1020,11 +1083,19 @@ let executionTimerInterval = null;
 // Format duration in human-readable format
 function formatDuration(ms) {
     if (ms < 1000) return `${ms}ms`;
-    const seconds = ms / 1000;
-    if (seconds < 60) return `${seconds.toFixed(1)}s`;
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = (seconds % 60).toFixed(0);
-    return `${minutes}m ${remainingSeconds}s`;
+    const totalSeconds = ms / 1000;
+
+    if (totalSeconds < 60) return `${totalSeconds.toFixed(1)}s`;
+
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = Math.floor(totalSeconds % 60);
+
+    if (hours > 0) {
+        return `${hours}h ${minutes}m ${seconds}s`;
+    } else {
+        return `${minutes}m ${seconds}s`;
+    }
 }
 
 // Start execution - initializes UI and timer
@@ -1371,29 +1442,50 @@ document.addEventListener('DOMContentLoaded', () => {
 if (elements.executeBtn) {
     elements.executeBtn.addEventListener('click', async () => {
         if (!selectedDataType) return alert('Please select a script first.');
-        if (!authToken) return alert('Please login first.');
+        const template = TEMPLATES[selectedDataType] || {};
+        const noLoginRequired = template.requiresLogin === false;
+        if (!authToken && !noLoginRequired) return alert('Please login first.');
 
-        // 1. Get Rows from Excel
+        // 1. Get Rows from Data
         const fileInput = elements.fileUpload;
-        if (!fileInput.files.length) return alert('Please upload a filled template.');
+        if (!fileInput.files.length) return alert('Please upload a filled template or JSON file.');
 
         const file = fileInput.files[0];
+        const isJson = file.name.toLowerCase().endsWith('.json') || file.name.toLowerCase().endsWith('.geojson');
         const reader = new FileReader();
 
         reader.onload = async (e) => {
             try {
-                const data = new Uint8Array(e.target.result);
-                const workbook = XLSX.read(data, { type: 'array' });
-                const firstSheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[firstSheetName];
-                const rows = XLSX.utils.sheet_to_json(worksheet);
+                let rows = [];
 
-                if (rows.length === 0) return alert('Excel file is empty.');
+                if (isJson) {
+                    const jsonContent = JSON.parse(e.target.result);
+                    // For direct JSON/GeoJSON, we treat the entire file as one dataset
+                    rows = [{ "GeoJSON_Data": jsonContent }];
+                } else {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheetName = workbook.SheetNames[0];
+                    const worksheet = workbook.Sheets[firstSheetName];
+                    rows = XLSX.utils.sheet_to_json(worksheet);
+                }
+
+                if (rows.length === 0) return alert('File is empty.');
+
+                // [START ROW LOGIC]
+                let startFrom = parseInt(elements.startRowInput ? elements.startRowInput.value : 1);
+                if (isNaN(startFrom) || startFrom < 1) startFrom = 1;
+
+                // Adjust rows based on startFrom (Start Row is 1-indexed for user, so index 0 is row 1)
+                const rowsToProcess = rows.slice(startFrom - 1);
+                const totalToProcess = rowsToProcess.length;
+
+                if (totalToProcess === 0) return alert('No rows to process starting from Row ' + startFrom);
 
                 // 2. Start Execution
                 const stats = startExecution();
-                const total = rows.length;
-                let processed = 0;
+                const total = rows.length; // Keep global total for progress reporting
+                let processed = startFrom - 1;
                 let pass = 0;
                 let fail = 0;
 
@@ -1404,10 +1496,10 @@ if (elements.executeBtn) {
                 let batchSize = parseInt(template.batchSize);
                 if (isNaN(batchSize) || batchSize <= 0) batchSize = 1;
 
-                console.log(`[Execute] Total Rows: ${total}, Batch Size: ${batchSize}`);
+                console.log(`[Execute] Total Rows: ${total}, Starting from: ${startFrom}, Batch Size: ${batchSize}`);
 
-                executionResults = []; // Initialize accumulator
-                updateProgress(0, total, 0, 0);
+                executionResults = [];
+                updateProgress(processed, total, 0, 0);
 
                 // Get Env Config
                 const envData = getEnvUrls(currentEnvironment);
@@ -1432,7 +1524,8 @@ if (elements.executeBtn) {
                     allowAdditionalAttributes: elements.enableAdditionalAttributes ? elements.enableAdditionalAttributes.checked : false,
                     additionalAttributes: (elements.enableAdditionalAttributes && elements.enableAdditionalAttributes.checked)
                         ? (elements.additionalAttributesInput && elements.additionalAttributesInput.value ? elements.additionalAttributesInput.value.split(',').map(s => s.trim()).filter(k => k) : [])
-                        : []
+                        : [],
+                    batchSize: batchSize
                 };
 
                 try {
@@ -1475,7 +1568,7 @@ if (elements.executeBtn) {
 
                         // Group rows efficiently
                         const groups = new Map();
-                        rows.forEach(row => {
+                        rowsToProcess.forEach(row => {
                             const key = row[groupByCol] || 'UNK';
                             if (!groups.has(key)) groups.set(key, []);
                             groups.get(key).push(row);
@@ -1483,11 +1576,11 @@ if (elements.executeBtn) {
 
                         // Convert Map values to Units (Array of Arrays)
                         executionUnits = Array.from(groups.values());
-                        console.log(`[Execute] Formed ${executionUnits.length} Groups from ${rows.length} Rows.`);
+                        console.log(`[Execute] Formed ${executionUnits.length} Groups from ${rowsToProcess.length} Rows.`);
 
                     } else {
                         // No grouping, each row is a unit
-                        executionUnits = rows;
+                        executionUnits = rowsToProcess;
                     }
 
                     // 2. Form Batches from Units
@@ -1526,7 +1619,8 @@ if (elements.executeBtn) {
 
                         if (useV2) {
                             // Call V2 Executor for Chunk
-                            const executor = new ScriptExecutorV2({ apiBaseUrl: apiBaseUrl, debug: false });
+                            console.log(`[DEBUG] Calling V2 Executor: filename=${scriptFilename}, rows=${chunk.length}`);
+                            const executor = new ScriptExecutorV2({ apiBaseUrl: apiBaseUrl, debug: true });
                             chunkResults = await executor.execute(scriptFilename, chunk, authToken, config, config.boundary);
                         } else {
                             // Call Legacy Endpoint for Chunk
@@ -1542,6 +1636,13 @@ if (elements.executeBtn) {
                             });
 
                             if (!response.ok) {
+                                if (response.status === 401) {
+                                    // SESSION EXPIRED - Throw error with special flag
+                                    const err = new Error('Session Expired');
+                                    err.status = 401;
+                                    err.lastSuccessfulRow = processed;
+                                    throw err;
+                                }
                                 const err = await response.json();
                                 chunkResults = chunk.map(r => ({ ...r, status: 'Error', response: err.error || 'Batch Execution Failed' }));
                             } else {
@@ -1573,18 +1674,28 @@ if (elements.executeBtn) {
 
                 } catch (error) {
                     console.error('Execution Critical Failure:', error);
-                    alert('Execution Interrupted: ' + error.message);
+                    if (error.status === 401) {
+                        const resumeRow = (error.lastSuccessfulRow || processed) + 1;
+                        alert(`🛑 Session Expired\n\nExecution stopped at row ${processed}. \nPlease re-login and resume by setting "Start from Row" to ${resumeRow}.`);
+                    } else {
+                        alert('Execution Interrupted: ' + error.message);
+                    }
                 } finally {
                     completeExecution();
                 }
 
             } catch (readErr) {
-                console.error('File Read Error:', readErr);
-                alert('Failed to read Excel file.');
+                console.error('File Read/Parse Error:', readErr);
+                alert('Failed to read or parse the uploaded file. Please ensure it is valid.');
                 completeExecution();
             }
         };
-        reader.readAsArrayBuffer(file);
+
+        if (isJson) {
+            reader.readAsText(file);
+        } else {
+            reader.readAsArrayBuffer(file);
+        }
     });
 }
 

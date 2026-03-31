@@ -69,7 +69,7 @@ def _get_applicable_models(api_key):
         return 10
 
     models.sort(key=priority)
-    return list(dict.fromkeys(models))
+    return list(dict.fromkeys(models))[:3] # Limit to top 3 models for performance
 
 def extract_excel_columns(code: str) -> List[str]:
     """Extract Excel column names from code comments (Priority) or usage."""
@@ -282,7 +282,7 @@ def _call_gemini_with_candidates(api_key: str, models_to_try: List[str],
         # Retry loop (3 attempts)
         for attempt in range(3):
             try:
-                resp = requests.post(url, json=payload, timeout=120)
+                resp = requests.post(url, json=payload, timeout=60) # Reduced from 120s
                 
                 if resp.status_code == 200:
                     result = resp.json()

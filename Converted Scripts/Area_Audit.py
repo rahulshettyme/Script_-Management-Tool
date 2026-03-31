@@ -110,36 +110,51 @@ def run(rows, token, env_config):
                 new_row['Response'] = 'Missing CA_ID'
                 return new_row
 
-            # A. Get/Generate Coordinates
+            # A. Get/Generate Coordinates or GeoJSON
             coords_str = row.get('Coordinates')
-            coords = None
+            input_data = None
             if coords_str:
                 try: 
-                    coords = json.loads(coords_str)
+                    input_data = json.loads(coords_str)
                 except: 
-                    pass # Invalid JSON handling?
+                    pass
             
-            if not coords:
-                if min_lat is not None:
-                    coords = generate_square_one_acre(min_long, min_lat, max_long, max_lat)
-                else:
-                    new_row['Status'] = 'Fail'
-                    new_row['Response'] = 'No Coordinates provided and no Boundary set'
-                    return new_row
+            geo_payload = None
+            coords = None # Initialize to avoid UnboundLocalError
+            if isinstance(input_data, dict) and 'type' in input_data:
+                # Flow: Direct GeoJSON FeatureCollection provided
+                geo_payload = input_data
+                # Try to extract coordinates for Excel output display, else use whole data
+                try:
+                    coords = input_data['features'][0]['geometry']['coordinates']
+                except:
+                    coords = input_data
+                print(f"[AreaAudit] Using direct GeoJSON for {ca_name}")
+            else:
+                # Flow: Raw Coordinates or No Data (Square Generator)
+                coords = input_data
+                if not coords:
+                    if min_lat is not None:
+                        coords = generate_square_one_acre(min_long, min_lat, max_long, max_lat)
+                        print(f"[AreaAudit] Generated square coordinates for {ca_name}")
+                    else:
+                        new_row['Status'] = 'Fail'
+                        new_row['Response'] = 'No Coordinates provided and no Boundary set'
+                        return new_row
 
-            # Ensure MultiPolygon: [[[lon, lat]...]]
-            if isinstance(coords, list) and isinstance(coords[0], list) and isinstance(coords[0][0], list) and isinstance(coords[0][0][0], (int, float)):
-                 coords = [coords] # Upgrade Polygon to MultiPolygon
+                # Standardize Coordinates to MultiPolygon: [[[[lon, lat]...]]]]
+                if isinstance(coords, list) and isinstance(coords[0], list) and isinstance(coords[0][0], list) and isinstance(coords[0][0][0], (int, float)):
+                    coords = [coords] # Upgrade Polygon to MultiPolygon
 
-            # B. Call GeoUtil API
-            geo_payload = {
-                "type": "FeatureCollection",
-                "features": [{
-                    "type": "Feature",
-                    "properties": {},
-                    "geometry": { "coordinates": coords, "type": "MultiPolygon" }
-                }]
-            }
+                # B. Wrap into FeatureCollection for internal APIs
+                geo_payload = {
+                    "type": "FeatureCollection",
+                    "features": [{
+                        "type": "Feature",
+                        "properties": {},
+                        "geometry": { "coordinates": coords, "type": "MultiPolygon" }
+                    }]
+                }
             
             geo_url = f"{base_url}/services/utilservice/api/geojson/area"
             geo_resp = requests.post(geo_url, json=geo_payload, headers=headers)

@@ -1,0 +1,262 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Implementation Plan</title>
+<style>
+
+body {
+    font-family: 'Segoe UI', 'San Francisco', -apple-system, BlinkMacSystemFont, Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.7;
+    color: #2c3e50;
+    max-width: 950px;
+    margin: 40px auto;
+    padding: 50px 70px;
+    background-color: #ffffff;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    border-top: 8px solid #2980b9;
+    border-radius: 8px;
+}
+@media print {
+    body {
+        box-shadow: none;
+        margin: 0;
+        padding: 20px;
+        border-top: none;
+    }
+    .cover-page {
+        page-break-after: always;
+        height: 80vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+    }
+}
+h1 {
+    color: #1a252f;
+    border-bottom: 2px solid #ecf0f1;
+    padding-bottom: 12px;
+    margin-bottom: 25px;
+    font-size: 2.4em;
+    font-weight: 700;
+}
+h1:first-of-type {
+    display: none; /* Hide the markdown h1 since we have a cover page */
+}
+h2 {
+    color: #2980b9;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+    margin-top: 50px;
+    font-size: 1.8em;
+}
+h3 {
+    color: #34495e;
+    margin-top: 35px;
+    font-size: 1.4em;
+    font-weight: 600;
+}
+p {
+    margin-bottom: 18px;
+    font-size: 1.05em;
+    color: #4a5568;
+}
+ul, ol {
+    margin-bottom: 24px;
+    padding-left: 28px;
+    color: #4a5568;
+}
+li {
+    margin-bottom: 10px;
+    font-size: 1.05em;
+}
+li strong {
+    color: #2d3748;
+}
+strong {
+    color: #1a202c;
+    font-weight: 700;
+}
+code {
+    background-color: #f8f9fa;
+    border: 1px solid #e2e8f0;
+    padding: 3px 7px;
+    border-radius: 4px;
+    font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+    font-size: 0.9em;
+    color: #e53e3e;
+}
+pre {
+    background-color: #1a202c;
+    color: #f7fafc;
+    padding: 18px;
+    border-radius: 8px;
+    overflow-x: auto;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    margin: 25px 0;
+}
+pre code {
+    background-color: transparent;
+    color: inherit;
+    padding: 0;
+    border: none;
+}
+blockquote {
+    border-left: 5px solid #2980b9;
+    background-color: #ebf5fb;
+    margin: 25px 0;
+    padding: 18px 25px;
+    border-radius: 0 8px 8px 0;
+    font-style: italic;
+    color: #2c3e50;
+}
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 30px 0;
+}
+th, td {
+    border: 1px solid #e2e8f0;
+    padding: 12px 15px;
+    text-align: left;
+}
+th {
+    background-color: #f7fafc;
+    font-weight: 600;
+    color: #2d3748;
+}
+/* Cover Page Styles */
+.cover-page {
+    text-align: center;
+    padding: 120px 20px 80px;
+    margin-bottom: 60px;
+}
+.cover-title {
+    font-size: 3.5em;
+    color: #1a252f;
+    font-weight: 800;
+    line-height: 1.2;
+    margin-bottom: 15px;
+}
+.subtitle {
+    font-size: 1.6em;
+    color: #7f8c8d;
+    margin-bottom: 40px;
+    font-weight: 300;
+}
+.cover-date {
+    color: #95a5a6;
+    font-size: 1.1em;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-top: 50px;
+}
+.cover-author {
+    margin-top: 20px;
+    font-size: 1.2em;
+    color: #34495e;
+    font-weight: 600;
+}
+.separator {
+    width: 60px;
+    height: 4px;
+    background-color: #3498db;
+    margin: 30px auto;
+    border-radius: 2px;
+}
+
+</style>
+</head>
+<body>
+    <div class="cover-page">
+        <div class="cover-title">Architecture & Implementation Plan</div>
+        <div class="separator"></div>
+        <div class="subtitle">Handling Script Execution & Server Resilience</div>
+        <div class="cover-date">February 27, 2026</div>
+        <div class="cover-author">Engineering Review Document</div>
+    </div>
+    
+    <div class="content">
+        <h1 id="handling-browser-refresh-during-script-execution">Handling Browser Refresh During Script Execution</h1>
+<p>Currently, the frontend makes a single HTTP POST request to <code>/api/scripts/execute</code> and waits for it to finish. If the browser is refreshed, the connection drops, but the Node.js server keeps running the Python script in the background until it finishes, while the generated result is lost.</p>
+<p>There are two main approaches to solving this, depending on the user experience you want:</p>
+<h3 id="option-1-stop-execution-on-disconnect-easiest-fastest">Option 1: Stop Execution on Disconnect (Easiest &amp; Fastest)</h3>
+<p>If the user refreshes or closes the tab, we detect the dropped connection and immediately terminate the running Python script.</p>
+<p><strong>Pros:</strong>
+* Very easy to implement.
+* Prevents the server from wasting resources on background tasks no one is waiting for.
+* Prevents simultaneous runs from corrupting data if the user refreshes and clicks "Run" again.</p>
+<p><strong>Cons:</strong>
+* If the user accidentally refreshes a script that has been running for 5 minutes, they lose all their progress and have to start over.</p>
+<p><strong>Implementation:</strong>
+* Add a listener to the request object (<code>req.on('close', ...)</code>) in <code>api.js</code>.
+* If the connection closes before the response is explicitly sent, call <code>.kill()</code> on the generated Python child process.</p>
+<h3 id="phase-1-current-goal-simple-ui-lock-history">Phase 1 (Current Goal): Simple UI Lock &amp; History</h3>
+<p>This is the simplest way to protect the server load and give users visibility, without needing a complex Queue or polling system.</p>
+<p><strong>How it works (The Rules):</strong>
+1. <strong>Environment-Level Execution Lock:</strong> Since multiple tenants share the same database within a specific Environment (e.g., all QA tenants hit the QA DB, all Prod tenants hit the Prod DB), the execution lock must be tracked <strong>per Environment</strong> (e.g., <code>isExecuting['qa'] = true</code>). 
+2. <strong>Execute Button Lockout &amp; Race Conditions:</strong>
+   * The "Download Template" button stays active so users can prepare data.
+   * Only the final "Start Execution" (Upload &amp; Run) button checks this lock.
+   * <strong>Race Condition Protection:</strong> If User A and User B both have the modal open, and User A clicks "Execute", the server locks it. When User B clicks "Execute" a second later, the API immediately rejects User B's request with a "423 Locked" or "429 Too Many Requests" error. The frontend catches this error, stops the upload progress, and displays the warning: "An execution is already running in this environment. Please check History."
+3. <strong>Synchronous Execution (Status Quo retained):</strong> The user who successfully started the script must keep their browser window open to get their final result file downloaded.
+4. <strong>Resilience (History Only):</strong> If the user who triggered the run closes their browser, the backend script continues running to the end. Since they can't download the result, the system simply records the final outcome (pass/fail) in the <code>History</code> log.</p>
+<p><strong>Implementation Steps:</strong>
+* <strong>Backend (<code>api.js</code>):</strong>
+    * Add a global variable <code>const isExecuting = false;</code> (or an object mapping <code>tenantId: true</code>).
+    * Before starting a Python script in <code>/api/scripts/execute</code>, check this flag. If <code>true</code>, return <code>429 Too Many Requests</code> (or similar). If <code>false</code>, set to <code>true</code>.
+    * When the script completes or crashes, set it back to <code>false</code>.
+    * Add logic to write a record to <code>backend/history.json</code> containing: <code>scriptName, startTime, endTime, status, totalRecords, passCount, failCount, tenant</code>.
+    * Create a simple <code>/api/scripts/history</code> endpoint to read this JSON file.
+* <strong>Frontend (<code>script_management_v2.js</code> / HTML):</strong>
+    * Before showing the upload modal (or via a quick <code>/api/scripts/status</code> check), verify if the execution lock is active. If so, disable the button and show the warning message.
+    * Build the "History" view that simply displays the JSON records in a table. It does <em>not</em> need "Download Result" buttons, as results are ephemeral to the user's active session.</p>
+<hr />
+<h3 id="option-2-background-tasks-polling-history-queuing-advanced-phase-2">Option 2: Background Tasks, Polling, History, &amp; Queuing (Advanced, Phase 2)</h3>
+<p>Instead of executing the script immediately and making the frontend wait, we move to a <strong>Job Queue System</strong>.</p>
+<p><strong>Pros:</strong>
+* <strong>Server &amp; DB Protection:</strong> By enforcing a strict queue (e.g., only 1 or 2 scripts running globally at a time), we guarantee that a sudden spike in users won't crash the server or overload the database.
+* <strong>Resilient UX:</strong> If the user refreshes the page or logs out, their task continues in the queue or background. 
+* <strong>Full Audit History:</strong> We keep a log of all past runs with detailed metrics so users can review the outcomes later.</p>
+<p><strong>Cons:</strong>
+* Requires significant refactoring of both the Backend (<code>api.js</code>) and the Frontend (<code>script_management_v2.js</code> &amp; a new HTML view).
+* More complex to debug since tasks run in the background.</p>
+<p><strong>Implementation Breakdown:</strong></p>
+<p><strong>1. The Queue Manager (<code>queueManager.js</code>)</strong>
+* To keep concerns strictly separated and prevent <code>api.js</code> from becoming bloated, we will create a dedicated <code>backend/queueManager.js</code>.
+* When <code>/api/scripts/execute</code> is called in <code>api.js</code>, it will simply pass the request data to the Queue Manager.
+* The Queue Manager will maintain the in-memory queue array, backed up by a persistent <code>tasks.json</code> file.
+* It will run the <strong>Task Worker</strong> background loop:
+    - If <code>active_tasks &lt; MAX_CONCURRENT_TASKS</code>, pull from queue, update state to "In Progress", and spawn the Python process.
+    - When the Python script finishes/fails, handle saving outputs, update status to "Completed/Failed", and trigger the next task.</p>
+<p><strong>2. File Storage (Inputs &amp; Outputs)</strong>
+* <strong>The Storage Challenge:</strong> Data Generation inputs and outputs can be large. 
+* <strong>Current Initial Approach (Local Disk):</strong> 
+    - When a user uploads rows, we will convert the JSON rows back to a temporary <code>.xlsx</code> or <code>.json</code> file in a new <code>backend/storage/inputs/</code> directory labeled with the <code>Task ID</code> (e.g., <code>input_task123.json</code>).
+    - When the Python script finishes, the Queue Manager will take the final resulting JSON data and save it straight to <code>backend/storage/outputs/output_task123.json</code>.
+    - The History UI will have "Download" buttons that map to endpoints returning these specific files.
+* <strong>GCP Cloud Storage (Scaling Up):</strong>
+    - Local disk is great for v1, but if the container restarts (especially in Docker/Cloud Run without mounted volumes), local files are lost. 
+    - <em>If your company allows it</em>, integrating a GCP Service Account to save these files directly to a <strong>Google Cloud Storage (GCS) Bucket</strong> would be much more robust for production. We can design the Queue Manager to use local storage first, and swap it for GCP storage later via configuration if needed.</p>
+<p><strong>3. The History View (Audit &amp; Results)</strong>
+* <strong>Backend:</strong> Store task metadata in <code>tasks.json</code> containing: <code>taskId</code>, <code>scriptName</code>, <code>startTime</code>, <code>endTime</code>, <code>tenant</code>, <code>totalRecords</code>, <code>passCount</code>, <code>failCount</code>, <code>status</code> (Queued, In Progress, Completed, Failed), <code>inputFilePath</code>, and <code>outputFilePath</code>.
+* <strong>Frontend:</strong> Create a completely new "History" page (e.g., <code>history.html</code>).
+* This page will call a new <code>/api/scripts/history</code> endpoint to get the list of runs and display them in a data table showing:
+    * Script Name &amp; Tenant
+    * Start Time
+    * Status Indicator (🟡 Queued, 🔵 Running, 🟢 Completed, 🔴 Failed)
+    * Metrics: Total Records / Pass / Fail
+* Action columns in the table:
+    * <strong>Download Input:</strong> Calls backend to download the stored original input data.
+    * <strong>Download Output:</strong> Calls backend to serve the resulting output data file (if completed/failed).</p>
+<p><strong>3. The Execution Flow (Polling)</strong>
+* When a user submit a script via the UI, the frontend receives a <code>Task ID</code> immediately.
+* The frontend uses <code>setInterval</code> to "poll" (ask the server) every 3 seconds: "Is Task ID X done?".
+* The UI can show: "You are #2 in the queue..." -&gt; "Running (12/100 processed)..." -&gt; "Done! Here are your results."</p>
+<h2 id="recommendation">Recommendation</h2>
+<p>Given that scripts in this platform can sometimes take a long time to run (Data Generation), <strong>Option 2</strong> is the industry standard. However, if you are looking for a quick fix right now to stop runaway processes from dragging down the server, <strong>Option 1</strong> is highly recommended as a first step.</p>
+<p>Please review and let me know which approach you would prefer to take, so I can provide the exact code changes or start implementing!</p>
+    </div>
+</body>
+</html>

@@ -1078,5 +1078,108 @@
       "isDynamicUI": true
     },
     "generation_prompt": "Script Name: AddPlaces\nExcel Columns: name, type, tags, tag_id, latitude, longitude, address\n\nOUTPUT MAPPING CONFIGURATION:\n- UI Output Definition:\n- UI Column 'Name': Set to '' (Logic: from excel)\n- UI Column 'Status': Set to '' (Logic: 'Fail' if tag not found or if status code of place creation is not 200 or 201\n'Pass' if status of place creation is 200 or 201)\n- Excel Output Definition:\n   - Column 'tag_id': Set to '' (Logic: attribute 'id' from tag API response)\n   - Column 'Status': Set to '' (Logic: 'Fail' if tag not found or if status code of place creation is not 200 or 201\n'Pass' if status of place creation is 200 or 201)\n   - Column 'Response': Set to '' (Logic: 'Tag not found' if tag not found or \nwhole response of place creation if status code is not 200 or 201\n'Place added' if place creation response code is 200 or 201)\nIMPORTANT: Include this configuration as a comment block at the top of the generated Python script for reference.\n\nStep 1 [MASTER]:\n  - Master Type: plottag\n  - Input Column: tags\n  - Output Column: tag_id\n  - Lookup Path: id\n  - On Failure: Skip Row\n  - Run Method: search\n  - IMPORTANT: You MUST import and use 'components.master_search' for this step.\n  - The master_data_config is available in env_config, so master_search will auto-detect run_method (usually 'search').\n\nStep 2 [GEO]:\n  - Geo Location Logic: Generate address_component in the below format using 'latitude' and 'longitude' columns have values, else use column 'address'. Note: check only forst row to decide the method. If first row has 'latitude' and 'longitude', then searching using latitude and longitude is common for all rows (fail row immediately if first row have these and any subsequent rows dont have these). Else, search using location for all rows. \nFormat:\n{\n        \"country\": \"India\",\n        \"formattedAddress\": \"Kundapura, Karnataka, India\",\n        \"administrativeAreaLevel1\": \"Karnataka\",\n        \"locality\": \"Kundapura\",\n        \"administrativeAreaLevel2\": \"Mysore Division\",\n        \"sublocalityLevel1\": \"\",\n        \"sublocalityLevel2\": \"\",\n        \"landmark\": \"\",\n        \"postalCode\": \"\",\n        \"houseNo\": \"\",\n        \"buildingName\": \"\",\n        \"placeId\": \"ChIJcYwVewaOvDsRy73eNhezPjs\",\n        \"latitude\": 13.6235274,\n        \"longitude\": 74.6917418\n    }\n  - IMPORTANT: You MUST import and use 'components.geofence_utils' for this step.\n  - Usage: boundary_data = geofence_utils.get_boundary(location_name, env_config.get('google_api_key'))\n  - CRITICAL: 'boundary_data' IS the direct result object. It is NOT wrapped in 'google_response' or 'data'.\n  - 'boundary_data' structure: { \"formatted_address\": \"...\", \"geometry\": { \"location\": {...}, \"viewport\": {...}, \"bounds\": {...} }, \"place_id\": \"...\", \"address_components\": [...], \"geojson_polygon\": {...} }\n  - NOTE: 'geojson_polygon' is ALREADY a FeatureCollection. DO NOT wrap it in another FeatureCollection or check for 'Polygon' type.\n  - CRITICAL: When mapping 'bounds' and 'geoInfo', ALWAYS prioritize 'geometry.bounds' over 'geometry.viewport' if available, as 'bounds' is the strict geopolitical boundary.\n  - CRITICAL: The final Output column MUST be a JSON string. Use 'json.dumps(output_payload)' to populate the row.\n  - YOU MUST PARSE 'boundary_data' directly to extract fields required by the logic (e.g. boundary_data['formatted_address'], boundary_data['geometry']['location']).\n\nStep 3 [API]:\n  - Step/Variable Name: Create Place\n  - Call POST /services/farm/api/place\n  - Payload Type: JSON\n  - Payload Example: {    \"data\": null,    \"type\": \"PORT\",    \"name\": \"RS Kundapura Port\",    \"address\": {        \"country\": \"India\",        \"formattedAddress\": \"Kundapura, Karnataka, India\",        \"administrativeAreaLevel1\": \"Karnataka\",        \"locality\": \"Kundapura\",        \"administrativeAreaLevel2\": \"Mysore Division\",        \"sublocalityLevel1\": \"\",        \"sublocalityLevel2\": \"\",        \"landmark\": \"\",        \"postalCode\": \"\",        \"houseNo\": \"\",        \"buildingName\": \"\",        \"placeId\": \"ChIJcYwVewaOvDsRy73eNhezPjs\",        \"latitude\": 13.6235274,        \"longitude\": 74.6917418    },    \"latitude\": 13.6235274,    \"longitude\": 74.6917418}\n  - Expected Response: {  \"id\" : 3830202,  \"name\" : \"RS Kundapura Port\",  \"type\" : \"PORT\",  \"subType\" : null,  \"data\" : null,  \"images\" : null,  \"capacity\" : null,  \"address\" : {    \"id\" : 3830252,    \"formattedAddress\" : \"Kundapura, Karnataka, India\",    \"postalCode\" : \"\",    \"locality\" : \"Kundapura\",    \"data\" : null,    \"administrativeAreaLevel5\" : null,    \"administrativeAreaLevel4\" : null,    \"administrativeAreaLevel3\" : null,    \"administrativeAreaLevel2\" : \"Mysore Division\",    \"administrativeAreaLevel1\" : \"Karnataka\",    \"country\" : \"India\",    \"latitude\" : 13.6235274,    \"longitude\" : 74.6917418,    \"placeId\" : \"ChIJcYwVewaOvDsRy73eNhezPjs\",    \"sublocalityLevel1\" : \"\",    \"sublocalityLevel2\" : \"\",    \"sublocalityLevel3\" : null,    \"sublocalityLevel4\" : null,    \"sublocalityLevel5\" : null,    \"houseNo\" : \"\",    \"buildingName\" : \"\",    \"landmark\" : \"\",    \"clientId\" : \"d682cbce-d104-4800-a95e-d0ce02de2091\"  },  \"areaAudit\" : null,  \"auditedArea\" : null,  \"visibility\" : true,  \"latitude\" : 13.6235274,  \"longitude\" : 74.6917418}\n  - Instructions: Create the payload using the below:  1.1 attribute 'data' as null if 'tags' column is empty 1.2 attribute data as \"data\" : {\"tags\" : [ 3811552 ]} if 'tags' column is empty 2. attribute 'type' from column 'type' in capitals 3. attribute 'name' from column 'name' 4. attribute 'address' from geo step 5. attributes 'latitude' and 'longitude' if columns have values else from address component of geo step\n\n"
+  },
+  {
+    "name": "Refresh_Task.py",
+    "filename": "Refresh_Task.py",
+    "team": "Both",
+    "description": "Use the script to refresh task for task not started CAs",
+    "expected_columns": [
+      "CA_Name",
+      "CA_ID"
+    ],
+    "columns": [
+      {
+        "name": "CA_Name",
+        "type": "Mandatory",
+        "description": "Auto-detected"
+      },
+      {
+        "name": "CA_ID",
+        "type": "Mandatory",
+        "description": "Auto-detected"
+      }
+    ],
+    "requiresLogin": true,
+    "isMultithreaded": true,
+    "batchSize": "3",
+    "groupByColumn": "",
+    "enableGeofencing": false,
+    "allowAdditionalAttributes": false,
+    "additionalAttributes": [],
+    "outputConfig": {
+      "uiMapping": [
+        {
+          "colName": "CA Name",
+          "value": "",
+          "logic": "from excel column 'CA_Name'"
+        },
+        {
+          "colName": "CA_ID",
+          "value": "",
+          "logic": "from excel column 'CA_ID'"
+        },
+        {
+          "colName": "Status",
+          "value": "",
+          "logic": "Pass if status code is 200, else Fail"
+        }
+      ],
+      "aiInstructions": "",
+      "excelMapping": [
+        {
+          "colName": "Status",
+          "value": "",
+          "logic": "Pass if status code is 200, else Fail"
+        },
+        {
+          "colName": "Response",
+          "value": "response.errorKey",
+          "logic": "'Task refreshed successfully' if status code is 200\nvalue in response attribute 'errorKey' if status code in not 200\n"
+        },
+        {
+          "colName": "Tasks_Created",
+          "value": "response.name",
+          "logic": "If status is pass, Extract attribute \"name\" from response and write in column \"Tasks_Created\", comma separated if multiple names are present"
+        }
+      ],
+      "isDynamicUI": true
+    },
+    "generation_prompt": "Script Name: Refresh_Task\nExcel Columns: CA_Name, CA_ID\n\nOUTPUT MAPPING CONFIGURATION:\n- UI Output Definition:\n- UI Column 'CA Name': Set to '' (Logic: from excel column 'CA_Name')\n- UI Column 'CA_ID': Set to '' (Logic: from excel column 'CA_ID')\n- UI Column 'Status': Set to '' (Logic: Pass if status code is 200, else Fail)\n- Excel Output Definition:\n   - Column 'Status': Set to '' (Logic: Pass if status code is 200, else Fail)\n   - Column 'Response': Set to 'response.errorKey' (Logic: 'Task refreshed successfully' if status code is 200\nvalue in response attribute 'errorKey' if status code in not 200\n)\n   - Column 'Tasks_Created': Set to 'response.name' (Logic: If status is pass, Extract attribute \"name\" from response and write in column \"Tasks_Created\", comma separated if multiple names are present)\nIMPORTANT: Include this configuration as a comment block at the top of the generated Python script for reference.\n\nStep 1 [API]:\n  - Step/Variable Name: CA API\n  - Call GET /services/farm/api/croppable-areas/{CA_ID}\n  - Payload Type: QUERY\n  - Expected Response: {  \"id\" : 3627752,  \"cropUnits\" : 0,  \"name\" : \"RS Validate A 25151001|CA-1\",  \"expectedQuantity\" : 3000.0,  \"organic\" : null,  \"status\" : \"ACCEPTED\",  \"cropexCropCode\" : null,  \"cropAudited\" : false,  \"sowingDate\" : \"2025-12-01T00:00:00.000+0000\",  \"pruningDate\" : null,  \"expectedHarvestDate\" : \"2026-04-08T00:00:00.000+0000\",  \"data\" : {    \"location\" : \"Bangalore Division,Karnataka,India\",    \"expectedYield\" : 1000.0  },  \"projectId\" : 3316602,  \"projectName\" : \"RS Sanity Testing\",  \"landId\" : 3626353,  \"landName\" : \"RS Validate A 25151001\",  \"varietyId\" : 3149102,  \"varietyName\" : \"RS PR IN Planet Potato\",  \"actualCropStageId\" : null,  \"actualCropStageName\" : null,  \"expectedCropStageId\" : 3466502,  \"expectedCropStageName\" : \"RS Crop Stage 4\",  \"cropId\" : 1005,  \"cropName\" : \"Potato\",  \"srCropId\" : 6,  \"varietySrCropId\" : 231,  \"varietySrCropCode\" : \"Potato\",  \"ownerId\" : 3627502,  \"ownerFirstName\" : \"RS Validate Test Farmer\",  \"landSoilTypeName\" : \"Black\",  \"landIrrigationTypeName\" : \"Basin Irrigation\",  \"auditedArea\" : null,  \"usableArea\" : {    \"count\" : 3.0  },  \"declaredArea\" : {    \"count\" : 3.0  },  \"orderNumber\" : \"\",  \"tasks\" : [ ],  \"cropUnitList\" : [ ],  \"massUploadUserId\" : null,  \"images\" : null,  \"splitBy\" : null,  \"splitDate\" : null,  \"lastModifiedDate\" : \"2026-01-15T20:30:17.518Z\",  \"externalId\" : null,  \"assignedToFarmerIds\" : [ 3532202 ],  \"assignedToFarmerNames\" : [ \"RS No Pref User\" ],  \"userNames\" : [ ],  \"planTypeId\" : null,  \"planTypeName\" : null,  \"detailingStatus\" : \"ONGOING\",  \"clientId\" : \"a589a0a3-dd80-4d8f-9d77-221b072092af\",  \"reestimatedDate\" : null,  \"reestimatedValue\" : 3000.0,  \"receivedHarvest\" : 0.0,  \"hasTaskStarted\" : false,  \"latitude\" : null,  \"longitude\" : null,  \"altitude\" : null,  \"areaAudit\" : null,  \"plotScore\" : 0,  \"farmerCode\" : \"RSVTF\",  \"topFieldAlertName\" : null,  \"topReportedLoss\" : null,  \"lossReported\" : null,  \"nameCounter\" : null,  \"reasonId\" : null,  \"reasonName\" : null,  \"projectAssetId\" : 3627702,  \"srPlotId\" : null,  \"farmerCropId\" : null,  \"userIds\" : [ ],  \"acreSquareCaId\" : null,  \"split\" : false,  \"landClientId\" : \"daf56ebd-1941-4b64-a42b-ee0162449727\",  \"ownerClientId\" : \"f3665d96-13fb-476e-89bf-7f5b2cea1c7f\",  \"projectClientId\" : \"dc711a42-9ede-4c31-b0ee-28b73ab212a2\",  \"deleted\" : false,  \"massUpload\" : false,  \"plotClosure\" : false,  \"isIgnoreTaskStarted\" : false}\n  - Instructions: get the response and use the whole response for further processing\n\nStep 2 [API]:\n  - Step/Variable Name: refresh Task API\n  - Call PUT /services/farm/api/croppablearea/tasks?sort=lastModifiedDate,desc\n  - Payload Type: JSON\n  - Payload Example: {  \"id\" : 3627752,  \"cropUnits\" : 0,  \"name\" : \"RS Validate A 25151001|CA-1\",  \"expectedQuantity\" : 3000.0,  \"organic\" : null,  \"status\" : \"ACCEPTED\",  \"cropexCropCode\" : null,  \"cropAudited\" : false,  \"sowingDate\" : \"2025-12-01T00:00:00.000+0000\",  \"pruningDate\" : null,  \"expectedHarvestDate\" : \"2026-04-08T00:00:00.000+0000\",  \"data\" : {    \"location\" : \"Bangalore Division,Karnataka,India\",    \"expectedYield\" : 1000.0  },  \"projectId\" : 3316602,  \"projectName\" : \"RS Sanity Testing\",  \"landId\" : 3626353,  \"landName\" : \"RS Validate A 25151001\",  \"varietyId\" : 3149102,  \"varietyName\" : \"RS PR IN Planet Potato\",  \"actualCropStageId\" : null,  \"actualCropStageName\" : null,  \"expectedCropStageId\" : 3466502,  \"expectedCropStageName\" : \"RS Crop Stage 4\",  \"cropId\" : 1005,  \"cropName\" : \"Potato\",  \"srCropId\" : 6,  \"varietySrCropId\" : 231,  \"varietySrCropCode\" : \"Potato\",  \"ownerId\" : 3627502,  \"ownerFirstName\" : \"RS Validate Test Farmer\",  \"landSoilTypeName\" : \"Black\",  \"landIrrigationTypeName\" : \"Basin Irrigation\",  \"auditedArea\" : null,  \"usableArea\" : {    \"count\" : 3.0  },  \"declaredArea\" : {    \"count\" : 3.0  },  \"orderNumber\" : \"\",  \"tasks\" : [ ],  \"cropUnitList\" : [ ],  \"massUploadUserId\" : null,  \"images\" : null,  \"splitBy\" : null,  \"splitDate\" : null,  \"lastModifiedDate\" : \"2026-01-15T20:30:17.518Z\",  \"externalId\" : null,  \"assignedToFarmerIds\" : [ 3532202 ],  \"assignedToFarmerNames\" : [ \"RS No Pref User\" ],  \"userNames\" : [ ],  \"planTypeId\" : null,  \"planTypeName\" : null,  \"detailingStatus\" : \"ONGOING\",  \"clientId\" : \"a589a0a3-dd80-4d8f-9d77-221b072092af\",  \"reestimatedDate\" : null,  \"reestimatedValue\" : 3000.0,  \"receivedHarvest\" : 0.0,  \"hasTaskStarted\" : false,  \"latitude\" : null,  \"longitude\" : null,  \"altitude\" : null,  \"areaAudit\" : null,  \"plotScore\" : 0,  \"farmerCode\" : \"RSVTF\",  \"topFieldAlertName\" : null,  \"topReportedLoss\" : null,  \"lossReported\" : null,  \"nameCounter\" : null,  \"reasonId\" : null,  \"reasonName\" : null,  \"projectAssetId\" : 3627702,  \"srPlotId\" : null,  \"farmerCropId\" : null,  \"userIds\" : [ ],  \"acreSquareCaId\" : null,  \"split\" : false,  \"landClientId\" : \"daf56ebd-1941-4b64-a42b-ee0162449727\",  \"ownerClientId\" : \"f3665d96-13fb-476e-89bf-7f5b2cea1c7f\",  \"projectClientId\" : \"dc711a42-9ede-4c31-b0ee-28b73ab212a2\",  \"deleted\" : false,  \"massUpload\" : false,  \"plotClosure\" : false,  \"isIgnoreTaskStarted\" : false}\n  - Expected Response: [ {  \"id\" : 3856256,  \"name\" : \"Raja plan type\",  \"planTypeName\" : \"Raja Geo Tag plan type\",  \"startDate\" : \"2025-11-03T00:00:00Z\",  \"endDate\" : \"2025-11-03T00:00:00Z\",  \"requiredDays\" : 0,  \"planId\" : 3684252,  \"parentPlanId\" : 3684252,  \"status\" : \"open\",  \"taskType\" : null,  \"minimalScheduleDto\" : {    \"id\" : 3856903,    \"type\" : \"Scheduled\",    \"fixedDate\" : true,    \"noOfDays\" : 0,    \"executeWhen\" : null,    \"referenceDate\" : null  },  \"directAdhocTask\" : false,  \"adhocType\" : false}, {  \"id\" : 3856255,  \"name\" : \"Raja plan type\",  \"planTypeName\" : \"Raja Geo Tag plan type\",  \"startDate\" : \"2025-11-10T00:00:00Z\",  \"endDate\" : \"2025-11-10T00:00:00Z\",  \"requiredDays\" : 0,  \"planId\" : 3684252,  \"parentPlanId\" : 3684252,  \"status\" : \"open\",  \"taskType\" : null,  \"minimalScheduleDto\" : {    \"id\" : 3856902,    \"type\" : \"Scheduled\",    \"fixedDate\" : true,    \"noOfDays\" : 0,    \"executeWhen\" : null,    \"referenceDate\" : null  },  \"directAdhocTask\" : false,  \"adhocType\" : false}, {  \"id\" : 3856258,  \"name\" : \"RS Potato Zone collection\",  \"planTypeName\" : \"RS ASP Zone collection\",  \"startDate\" : \"2025-12-02T00:00:00Z\",  \"endDate\" : \"2025-12-03T00:00:00Z\",  \"requiredDays\" : 1,  \"planId\" : 3157058,  \"parentPlanId\" : null,  \"status\" : \"open\",  \"taskType\" : null,  \"minimalScheduleDto\" : {    \"id\" : 3856905,    \"type\" : \"Scheduled\",    \"fixedDate\" : false,    \"noOfDays\" : 1,    \"executeWhen\" : \"After\",    \"referenceDate\" : \"sowing\"  },  \"directAdhocTask\" : false,  \"adhocType\" : false}, {  \"id\" : 3856257,  \"name\" : \"RS Scheduled Potato plan\",  \"planTypeName\" : \"NPK fertilizer\",  \"startDate\" : \"2025-12-02T00:00:00Z\",  \"endDate\" : \"2025-12-04T00:00:00Z\",  \"requiredDays\" : 2,  \"planId\" : 3363352,  \"parentPlanId\" : null,  \"status\" : \"open\",  \"taskType\" : null,  \"minimalScheduleDto\" : {    \"id\" : 3856904,    \"type\" : \"Scheduled\",    \"fixedDate\" : false,    \"noOfDays\" : 1,    \"executeWhen\" : \"After\",    \"referenceDate\" : \"sowing\"  },  \"directAdhocTask\" : false,  \"adhocType\" : false}, {  \"id\" : 3856254,  \"name\" : \"RS Chemical Task\",  \"planTypeName\" : \"RS Checmical\",  \"startDate\" : null,  \"endDate\" : null,  \"requiredDays\" : 0,  \"planId\" : 3622052,  \"parentPlanId\" : 3622052,  \"status\" : \"open\",  \"taskType\" : null,  \"minimalScheduleDto\" : null,  \"directAdhocTask\" : false,  \"adhocType\" : false}, {  \"id\" : 3856259,  \"name\" : \"RS Crop New Plan\",  \"planTypeName\" : \"RS Crop New Plan type\",  \"startDate\" : null,  \"endDate\" : null,  \"requiredDays\" : 0,  \"planId\" : 3495802,  \"parentPlanId\" : 3495802,  \"status\" : \"open\",  \"taskType\" : null,  \"minimalScheduleDto\" : null,  \"directAdhocTask\" : false,  \"adhocType\" : false}, {  \"id\" : 3856253,  \"name\" : \"RS L0 Plan\",  \"planTypeName\" : \"RS Level 0 with all attributes\",  \"startDate\" : null,  \"endDate\" : null,  \"requiredDays\" : 0,  \"planId\" : 3157054,  \"parentPlanId\" : null,  \"status\" : \"open\",  \"taskType\" : null,  \"minimalScheduleDto\" : null,  \"directAdhocTask\" : false,  \"adhocType\" : false}, {  \"id\" : 3856260,  \"name\" : \"RS L2 Sample Collection\",  \"planTypeName\" : \"RS Zone L2\",  \"startDate\" : null,  \"endDate\" : null,  \"requiredDays\" : 0,  \"planId\" : 3345202,  \"parentPlanId\" : null,  \"status\" : \"open\",  \"taskType\" : null,  \"minimalScheduleDto\" : null,  \"directAdhocTask\" : false,  \"adhocType\" : false} ]\n  - Instructions: Use the response from 'CA API' as payload body for 'refresh Task API' and send. Wait for response to get and updated excel and then only proceed with next row Add a delay of 1 second between each row Id status is pass, Extract attribute \"name\" from response and write in column \"Tasks_Created\", comma separated if multiple names are present\n\n"
+  },
+  {
+    "name": "GeoJson to Excel Converter",
+    "filename": "GeoJson_To_Excel_Converter.py",
+    "team": "QA",
+    "description": "Converts GeoJSON FeatureCollections into formatted Excel rows. Supports .xlsx, .xls, and direct .json or .geojson file upload (recommended for large datasets to bypass Excel cell limits).",
+    "columns": [
+      {
+        "name": "GeoJSON_Data",
+        "type": "Mandatory",
+        "description": "Paste the full GeoJSON FeatureCollection string here"
+      }
+    ],
+    "requiresLogin": false,
+    "isMultithreaded": false,
+    "outputConfig": {
+      "isDynamicUI": true,
+      "uiMapping": [
+        {
+          "colName": "plotID",
+          "value": "plotID",
+          "logic": "Extracted from GeoJSON properties"
+        },
+        {
+          "colName": "Geo info",
+          "value": "Geo info",
+          "logic": "Formatted FeatureCollection"
+        },
+        {
+          "colName": "Status",
+          "value": "Status",
+          "logic": "Success/Fail"
+        }
+      ]
+    }
   }
 ]

@@ -100,10 +100,15 @@ window.toggleTestAttributesInput = function (checkbox) {
 
 function toggleThreadSize(checkbox) {
     const container = document.getElementById('threadSizeContainer');
+    const threadInput = document.getElementById('threadSize');
     if (container) {
         container.style.opacity = checkbox.checked ? '1' : '0.3';
         container.style.pointerEvents = checkbox.checked ? 'all' : 'none';
-        // Note: We don't hide it completely so user sees the option exists
+
+        // If threading disabled, force batch size to 1 to avoid confusion
+        if (!checkbox.checked && threadInput) {
+            threadInput.value = "1";
+        }
     }
 }
 
@@ -572,6 +577,36 @@ async function loadScriptByName(filenameKey) {
             }
             // Trigger Analysis automatically on load to show visual representation
             // analyzeScript(); // Optional? Maybe explicit is better. User might just want to edit.
+
+            // Populate detectedColumns from meta if available
+            if (data.meta && data.meta.columns) {
+                // Ensure we map to strings if it's an array of objects
+                detectedColumns = data.meta.columns.map(c => typeof c === 'string' ? c : (c.name || c.colName));
+            } else if (data.meta && data.meta.inputColumns && data.meta.inputColumns.length > 0) {
+                detectedColumns = data.meta.inputColumns.map(c => typeof c === 'string' ? c : (c.name || c.colName));
+            }
+
+            // FAST PASS: Extract from Prompt if still empty
+            if ((!detectedColumns || detectedColumns.length === 0) && data.generationPrompt) {
+                const excelColMatches = [...data.generationPrompt.matchAll(/from excel column '([^']+)'/gi)];
+                if (excelColMatches.length > 0) {
+                    detectedColumns = [...new Set(excelColMatches.map(m => m[1]))];
+                    console.log("🚀 Fast-Detected Columns from Prompt:", detectedColumns);
+                }
+            }
+
+            // Sync Visuals (Analysis Tab) immediately
+            const uiCols = (data.meta && data.meta.outputConfig && data.meta.outputConfig.uiMapping)
+                ? data.meta.outputConfig.uiMapping.map(m => m.colName)
+                : [];
+
+            if (window.renderVisualsFromSteps) {
+                window.renderVisualsFromSteps(
+                    [], // No parsed steps yet
+                    detectedColumns,
+                    uiCols
+                );
+            }
 
             // alert(displayMsg); // Removed alert for smoother UX
             console.log(displayMsg);
@@ -1353,7 +1388,7 @@ function renderAnalysis(data) {
         });
     }
 
-    detectedColumns = data.inputColumns || [];
+    detectedColumns = (data.inputColumns || []).map(c => typeof c === 'string' ? c : (c.name || c.colName));
     const colStr = detectedColumns.join(', ');
     document.getElementById('detectedColumnsDisplay').value = colStr;
 
@@ -1364,7 +1399,8 @@ function renderAnalysis(data) {
         document.getElementById('detectedUIColumnsDisplay').value = uiColStr;
     }
 
-    // manualColumns is now hidden, but we still set it as source of truth for downstream logic
+    // manualColumns is now hidden and deprecated - we strictly use globalInputColumns as source of truth
+    // but we still update detectedColumnsDisplay for the user to "Confirm" what AI saw
     document.getElementById('manualColumns').value = colStr;
 
     // Auto-populate Group By if detected
@@ -1439,16 +1475,13 @@ async function proceedToTest() {
     if (!name) return alert("Script name is mandatory!");
     if (!code) return alert("Please provide Code");
 
-    // Verify Columns
-    const manualVal = document.getElementById('manualColumns').value;
-    let finalCols = manualVal ? manualVal.split(',').map(s => s.trim()).filter(s => s) : detectedColumns;
+    // Verify Columns - use globalInputColumns as ONLY source of truth
+    // If it's empty, user purposefully cleared it.
+    const manualVal = document.getElementById('globalInputColumns').value;
+    let finalCols = manualVal ? manualVal.split(',').map(s => s.trim()).filter(s => s) : [];
 
-    // SAFETY: Filter out UI Output columns from finalCols if they were accidentally included during analysis
-    const outConfig = getOutputConfigFromUI();
-    if (outConfig.uiMapping && outConfig.uiMapping.length > 0) {
-        const uiOutputNames = new Set(outConfig.uiMapping.map(m => m.colName));
-        finalCols = finalCols.filter(c => !uiOutputNames.has(c));
-    }
+    // REMOVED SAFETY FILTER: User should be able to have columns in both Input and UI Output
+    // If we filter here, we lose columns that are used for both (like CA_ID).
 
     // CAPTURE CURRENT DESCRIPTION (Ensure Logic Steps are saved!)
     let currentDesc = window.lastGeneratedDescription || "Draft Script";
@@ -1478,7 +1511,7 @@ async function proceedToTest() {
                     : [],
                 enableGeofencing: document.getElementById('enableGeofencing') ? document.getElementById('enableGeofencing').checked : false,
                 targetLocation: document.getElementById('targetLocation') ? document.getElementById('targetLocation').value : "",
-                batchSize: parseInt(document.getElementById('threadSize').value) || 10,
+                batchSize: document.getElementById('isMultithreaded').checked ? (parseInt(document.getElementById('threadSize').value) || 10) : 1,
                 groupByColumn: document.getElementById('groupByColumn').value,
                 outputConfig: getOutputConfigFromUI(),
                 status: 'draft',
@@ -2000,23 +2033,14 @@ async function importScript() {
         currentPrompt = window.lastGeneratedDescription || "";
     }
 
-    // Capture Columns (Priority: User Edited Global > Manual > Detected)
-    const manualVal = document.getElementById('manualColumns').value;
-    const detectedVal = document.getElementById('detectedColumnsDisplay').value;
+    // Capture Columns (Strictly use Global Input as source of truth)
     const globalVal = document.getElementById('globalInputColumns').value;
-
-    let finalColsStr = globalVal || manualVal || detectedVal || "";
     let inputColumns = [];
 
-    // SAFETY: Filter out UI Output columns from registration if they were accidentally included
-    const outMapping = getOutputConfigFromUI();
-    const uiOutputNames = new Set(outMapping.uiMapping ? outMapping.uiMapping.map(m => m.colName) : []);
-    const excelOutputNames = new Set(outMapping.excelMapping ? outMapping.excelMapping.map(m => m.colName) : []);
-
-    if (finalColsStr) {
-        inputColumns = finalColsStr.split(',')
+    if (globalVal && globalVal.trim()) {
+        inputColumns = globalVal.split(',')
             .map(s => s.trim())
-            .filter(s => s && !uiOutputNames.has(s) && !excelOutputNames.has(s))
+            .filter(s => s)
             .map(c => ({
                 name: c,
                 type: "Mandatory",
@@ -2045,7 +2069,7 @@ async function importScript() {
                 : [],
             enableGeofencing: document.getElementById('enableGeofencing') ? document.getElementById('enableGeofencing').checked : false,
             groupByColumn: document.getElementById('groupByColumn').value,
-            batchSize: document.getElementById('threadSize').value,
+            batchSize: document.getElementById('isMultithreaded').checked ? (document.getElementById('threadSize').value || 1) : 1,
             outputConfig: getOutputConfigFromUI()
         })
     });
@@ -2186,14 +2210,11 @@ function downloadTemplate() {
 
     let finalCols = [];
 
-    // Priority 1: User Edited/Global Input directly (The comma separated field)
+    // Strictly use Global Input (The visible comma separated field)
     if (globalVal && globalVal.trim()) {
         finalCols = globalVal.split(',').map(s => s.trim()).filter(s => s);
     }
-    // Priority 2: Manual / Detected Fallback (Old Logic)
-    else {
-        finalCols = manualVal ? manualVal.split(',').map(s => s.trim()).filter(s => s) : [...detectedColumns];
-    }
+    // No fallback to analyzer findings per user request - user field is source of truth
 
     // Append Custom Attributes to Columns
     if (document.getElementById('allowAdditionalAttributes').checked && attrInput && attrInput.value.trim()) {
@@ -2444,6 +2465,21 @@ function renderVisualsFromSteps(steps, inputColumns, uiColumns) {
     const container = document.getElementById('analysisSteps');
     container.innerHTML = ''; // Clear
 
+    // Update Columns IMMEDIATELY (Before early return)
+    const rawCols = inputColumns || [];
+    detectedColumns = rawCols.map(c => typeof c === 'string' ? c : (c.name || c.colName));
+    const colStr = detectedColumns.join(', ');
+
+    // Correct ID for the Builder View
+    const globalInput = document.getElementById('globalInputColumns');
+    if (globalInput) globalInput.value = colStr;
+
+    // Legacy/Analysis View IDs
+    const displayInput = document.getElementById('detectedColumnsDisplay');
+    if (displayInput) displayInput.value = colStr;
+    const manualInput = document.getElementById('manualColumns');
+    if (manualInput) manualInput.value = colStr;
+
     // Populate UI Columns Display
     const uiInput = document.getElementById('detectedUIColumnsDisplay');
     if (uiInput) {
@@ -2494,19 +2530,7 @@ function renderVisualsFromSteps(steps, inputColumns, uiColumns) {
         container.appendChild(div);
     });
 
-    // Update Columns
-    detectedColumns = inputColumns || [];
-    const colStr = detectedColumns.join(', ');
-
-    // Correct ID for the Builder View
-    const globalInput = document.getElementById('globalInputColumns');
-    if (globalInput) globalInput.value = colStr;
-
-    // Legacy/Analysis View IDs (optional to keep for safety)
-    const displayInput = document.getElementById('detectedColumnsDisplay');
-    if (displayInput) displayInput.value = colStr;
-    const manualInput = document.getElementById('manualColumns');
-    if (manualInput) manualInput.value = colStr;
+    // Steps rendering logic occurs after column updates...
 }
 
 async function autoPopulateStepsFromAI(code) {

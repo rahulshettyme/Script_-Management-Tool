@@ -47,3 +47,36 @@ Converted Scripts/TEST_*.py
 Converted Scripts/DraftTest.py
 Converted Scripts/TestScript.py
 Converted Scripts/*.txt
+
+# --- PHASE 2 PRIVACY (Symlink Workflow) ---
+# Ignore everything in these folders except the whitelist
+Manager/*
+!Manager/runner_bridge.py
+Converted Scripts/*
+!Converted Scripts/*.py
+Draft Scripts/
+publish_release.py
+
+# --- LOCAL DATA & LOGS (Global) ---
+*.log
+*.txt
+!requirements.txt
+*.bak
+*.pyc
+__pycache__/
+
+# --- SYSTEM CACHE/LOGS ---
+System/*.json
+!System/db.json
+!System/scripts_registry.json
+System/agent_feedback.json
+System/debug_*
+System/verify_*
+System/test_*
+
+# --- OTHER ---
+.cache_master_data/
+temp_data/
+System/secrets.json
+backup/
+*.zip
