@@ -263,22 +263,32 @@
                                 Geofencing 🌍</span>
                         </label>
 
-                        <!-- MOVED: Multithreading Option -->
-                        <div style="display: flex; gap: 1rem; align-items: center;">
+                        <!-- Processing Options (Parallel vs Batch) -->
+                        <div style="display: flex; gap: 1.5rem; align-items: center; background: rgba(30, 41, 59, 0.3); padding: 8px 12px; border-radius: 6px; border: 1px solid #334155;">
                             <label class="switch" style="display: flex; align-items: center; cursor: pointer;">
-                                <input type="checkbox" id="isMultithreaded" checked onchange="toggleThreadSize(this)">
+                                <input type="checkbox" id="isMultithreaded" onchange="toggleParallelProcessing(this)">
                                 <span style="font-size: 0.9rem; color: #cbd5e1; margin-left: 0.75rem;">
-                                    Enable Multithreading 🚀
+                                    Enable Parallel Processing 🚀
                                 </span>
                             </label>
 
-                            <div id="threadSizeContainer" style="display: flex; align-items: center; gap: 0.5rem;">
+                            <div style="width: 1px; height: 20px; background: #334155;"></div>
+
+                            <label class="switch" style="display: flex; align-items: center; cursor: pointer;">
+                                <input type="checkbox" id="enableBatchProcessing" onchange="toggleBatchProcessing(this)">
+                                <span style="font-size: 0.9rem; color: #cbd5e1; margin-left: 0.75rem;">
+                                    Enable Batch Processing 📦
+                                </span>
+                            </label>
+
+                            <div id="threadSizeContainer" style="display: flex; align-items: center; gap: 0.5rem; opacity: 0.3; pointer-events: none;">
                                 <label style="color: #64748b; font-size: 0.85rem;">Batch Size:</label>
                                 <select id="threadSize"
                                     style="background: #0f172a; color: #cbd5e1; border: 1px solid #334155; padding: 2px 8px; border-radius: 4px;">
                                     <option value="5" selected>5</option>
                                     <option value="10">10</option>
                                     <option value="20">20</option>
+                                    <option value="25">25</option>
                                     <option value="50">50</option>
                                     <option value="100">100</option>
                                 </select>
@@ -827,7 +837,6 @@
                             </div>
                         </div>
 
-                        <!-- Add Button -->
                         <button onclick="addUIOutputRow()"
                             style="width: 100%; border: 1px dashed #475569; background: rgba(15, 23, 42, 0.5); color: #94a3b8; padding: 12px; border-radius: 6px; cursor: pointer; transition: all 0.2s; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 1.5rem;"
                             onmouseover="this.style.borderColor='#a78bfa'; this.style.color='#a78bfa'; this.style.background='rgba(167, 139, 250, 0.05)'"
@@ -835,7 +844,25 @@
                             <span style="font-size: 1.1rem;">+</span> Add UI Column
                         </button>
 
-                        <!-- Row: Status Removed (User requested everything to be configurable) -->
+                        <!-- Test Results Criteria -->
+                        <div style="background: rgba(16, 185, 129, 0.05); padding: 1rem; border-radius: 6px; margin-top: 0.5rem; border: 1px solid rgba(16, 185, 129, 0.2);">
+                            <h4 style="margin-top:0; color: #10b981; font-size: 0.9rem;">✅ Test Pass Criteria</h4>
+                            <p style="font-size: 0.8rem; color: #94a3b8; margin-bottom: 1rem; margin-top: 5px;">Define which result values should specifically count as a 'Pass'.</p>
+                            
+                            <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 15px; align-items: center;">
+                                <div>
+                                    <label style="display: block; color: #94a3b8; font-size: 0.75rem; margin-bottom: 4px; font-weight: 600;">Status Column</label>
+                                    <input type="text" id="passCriteriaCol" placeholder="e.g. Status" 
+                                        style="width: 100%; background: #0f172a; border: 1px solid #334155; padding: 8px; color: white; border-radius: 4px; font-size: 0.85rem;">
+                                </div>
+                                <div>
+                                    <label style="display: block; color: #94a3b8; font-size: 0.75rem; margin-bottom: 4px; font-weight: 600;">Pass Values (comma separated)</label>
+                                    <input type="text" id="passCriteriaValues" placeholder="e.g. PASS, SUCCESS, IN_PROGRESS" 
+                                        style="width: 100%; background: #0f172a; border: 1px solid #334155; padding: 8px; color: white; border-radius: 4px; font-size: 0.85rem;">
+                                </div>
+                            </div>
+                            <p style="font-size: 0.75rem; color: #64748b; margin-top: 10px; font-style: italic;">Note: If empty, system defaults to (PASS, SUCCESS, TRUE). Case-insensitive matching is used.</p>
+                        </div>
                     </div>
 
                     <div>

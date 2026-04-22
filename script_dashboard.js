@@ -29,10 +29,10 @@ async function fetchScripts() {
         // 2. Drafts
         const drafts = draftScripts.map(d => ({
             name: d.name,
-            filename: d.name,
+            filename: d.filename || d.name, // Fix: Use disk filename if meta name has spaces
             team: 'Unassigned',
             status: 'Draft',
-            description: '',
+            description: d.description || '',
             mtime: d.mtime
         }));
 

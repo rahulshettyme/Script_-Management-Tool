@@ -204,6 +204,16 @@ class LoginComponent {
             document.getElementById('lc-view-logged-in').style.display = 'none';
             document.getElementById('lc-view-form').style.display = 'block';
 
+            // Clear Password (security) and errors, but keep Tenant/User
+            const passwordInput = this.container.querySelector('#lc-password');
+            if (passwordInput) passwordInput.value = '';
+
+            const errorDiv = this.container.querySelector('#lc-error');
+            if (errorDiv) {
+                errorDiv.textContent = '';
+                errorDiv.classList.add('hidden');
+            }
+
             // Custom Logout Handler
             this.onLogout();
         };

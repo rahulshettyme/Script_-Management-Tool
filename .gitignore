@@ -80,3 +80,4 @@ temp_data/
 System/secrets.json
 backup/
 *.zip
+auto_sync.bat

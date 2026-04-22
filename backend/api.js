@@ -910,7 +910,7 @@ module.exports = function (app) {
                 PYTHONPATH: process.env.PYTHONPATH
                     ? process.env.PYTHONPATH + path.delimiter + path.join(__dirname, '..')
                     : path.join(__dirname, '..'),
-                GOOGLE_API_KEY: getGoogleApiKey()
+                'GOOGLE_API_KEY': getGoogleApiKey()
             }
         });
 
@@ -1157,7 +1157,7 @@ module.exports = function (app) {
 
         const generatorPath = path.join(__dirname, '..', 'Manager', 'script_generator.py');
         const pythonProcess = spawn('python', [generatorPath], {
-            env: { ...process.env, PYTHONIOENCODING: 'utf-8', GOOGLE_API_KEY: GOOGLE_API_KEY }
+            env: { ...process.env, PYTHONIOENCODING: 'utf-8', 'GOOGLE_API_KEY': getGoogleApiKey() }
         });
 
         let stdoutData = '';
@@ -1226,7 +1226,8 @@ module.exports = function (app) {
             const registryPath = path.join(__dirname, '..', 'System', 'scripts_registry.json');
             let registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
 
-            const entry = registry.find(r => r.filename === filename);
+            // Robust search: try filename first (exact), then name (exact)
+            const entry = registry.find(r => r.filename === filename || r.name === filename);
             if (!entry) return res.status(404).json({ error: 'Script not found' });
 
             if (team !== undefined) entry.team = team;
@@ -1251,23 +1252,35 @@ module.exports = function (app) {
         if (!filename) return res.status(400).json({ error: 'Missing filename' });
 
         try {
-            const cleanName = filename.replace('.py', '');
+            // Robust filename resolution: Ensure we handle names with spaces vs underscores
+            const cleanName = filename.replace('.py', '').trim();
+            const sanitizedName = cleanName.replace(/ /g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
+
             const pyName = `${cleanName}.py`;
-            const jsonName = `${cleanName}.json`;
+            const sanitizedPyName = `${sanitizedName}.py`;
             const metaName = `${cleanName}.py.meta.json`;
+            const sanitizedMetaName = `${sanitizedName}.py.meta.json`;
 
             // Paths
             const draftsDir = path.join(__dirname, '..', 'Draft Scripts');
             const scriptsDir = path.join(__dirname, '..', 'Converted Scripts');
-            // const originalDir = path.join(__dirname, '..', 'Original Scripts'); // DEPRECATED
             const registryPath = path.join(__dirname, '..', 'System', 'scripts_registry.json');
 
-            // 1. Try Delete from Drafts (Always check, even if Active, per usage)
-            if (fs.existsSync(path.join(draftsDir, pyName))) fs.unlinkSync(path.join(draftsDir, pyName));
-            if (fs.existsSync(path.join(draftsDir, metaName))) fs.unlinkSync(path.join(draftsDir, metaName));
+            // 1. Delete from Drafts (Check both literal and sanitized names)
+            [pyName, sanitizedPyName].forEach(n => {
+                const p = path.join(draftsDir, n);
+                if (fs.existsSync(p)) fs.unlinkSync(p);
+            });
+            [metaName, sanitizedMetaName].forEach(n => {
+                const p = path.join(draftsDir, n);
+                if (fs.existsSync(p)) fs.unlinkSync(p);
+            });
 
-            // 2. [DEPRECATED] Delete Active Files (Individual Configs)
-            if (fs.existsSync(path.join(scriptsDir, pyName))) fs.unlinkSync(path.join(scriptsDir, pyName));
+            // 2. Delete Active Files
+            [pyName, sanitizedPyName].forEach(n => {
+                const p = path.join(scriptsDir, n);
+                if (fs.existsSync(p)) fs.unlinkSync(p);
+            });
 
             // 3. Update Registry
             if (fs.existsSync(registryPath)) {
@@ -1307,7 +1320,7 @@ module.exports = function (app) {
 
         // Spawn Python Analyzer
         const pythonProcess = spawn('python', [analyzerPath], {
-            env: { ...process.env, PYTHONIOENCODING: 'utf-8', GOOGLE_API_KEY: GOOGLE_API_KEY }
+            env: { ...process.env, PYTHONIOENCODING: 'utf-8', 'GOOGLE_API_KEY': getGoogleApiKey() }
         });
 
         let stdoutData = '';
@@ -1464,7 +1477,7 @@ module.exports = function (app) {
                 PYTHONPATH: process.env.PYTHONPATH
                     ? process.env.PYTHONPATH + path.delimiter + path.join(__dirname, '..')
                     : path.join(__dirname, '..'),
-                GOOGLE_API_KEY: GOOGLE_API_KEY
+                'GOOGLE_API_KEY': getGoogleApiKey()
             }
         });
 
@@ -1591,18 +1604,21 @@ module.exports = function (app) {
             const { oldName, newName } = req.body; // Expects "OldName.py" or just "OldName"? Let's handle both.
             if (!oldName || !newName) return res.status(400).json({ error: 'Missing oldName or newName' });
 
-            // Normalize names (remove .py if present to be safe, then append)
+            // Handle Display Name vs Filename
+            // Display Name: Keep spaces, remove .py if user added it
+            const displayName = newName.replace(/\.py$/, '').trim();
+            // Filename: Replace spaces with underscores, remove other dangerous chars
+            const filenameBase = displayName.replace(/ /g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
+
+            if (filenameBase.length === 0) return res.status(400).json({ error: 'Invalid new name' });
+
             const cleanOld = oldName.replace(/\.py$/, '');
-            const cleanNew = newName.replace(/\.py$/, '').replace(/[^a-zA-Z0-9_-]/g, '_'); // Sanitize new name
-
-            if (cleanNew.length === 0) return res.status(400).json({ error: 'Invalid new name' });
-
             const oldPyName = `${cleanOld}.py`;
-            const newPyName = `${cleanNew}.py`;
+            const newPyName = `${filenameBase}.py`;
             const oldJsonName = `${cleanOld}.json`; // Config
-            const newJsonName = `${cleanNew}.json`;
+            const newJsonName = `${filenameBase}.json`;
             const oldMetaName = `${cleanOld}.py.meta.json`; // Draft Meta
-            const newMetaName = `${cleanNew}.py.meta.json`;
+            const newMetaName = `${filenameBase}.py.meta.json`;
 
             const draftsDir = path.join(__dirname, '..', 'Draft Scripts');
             const scriptsDir = path.join(__dirname, '..', 'Converted Scripts');
@@ -1611,48 +1627,54 @@ module.exports = function (app) {
 
             let renamedAny = false;
 
+            // Only perform filesystem rename if the filename actually changed
+            const isDifferentFile = oldPyName !== newPyName;
+
             // 1. Rename Drafts
             if (fs.existsSync(path.join(draftsDir, oldPyName))) {
-                fs.renameSync(path.join(draftsDir, oldPyName), path.join(draftsDir, newPyName));
+                if (isDifferentFile) fs.renameSync(path.join(draftsDir, oldPyName), path.join(draftsDir, newPyName));
                 renamedAny = true;
             }
             if (fs.existsSync(path.join(draftsDir, oldMetaName))) {
                 // Read meta, update name/filename inside, then write to new path
                 try {
                     const meta = JSON.parse(fs.readFileSync(path.join(draftsDir, oldMetaName), 'utf8'));
-                    meta.name = newPyName; // Update internal name
+                    meta.name = displayName; // Use human name
                     meta.filename = newPyName;
-                    fs.writeFileSync(path.join(draftsDir, newMetaName), JSON.stringify(meta, null, 2), 'utf8');
-                    fs.unlinkSync(path.join(draftsDir, oldMetaName)); // Delete old
+                    fs.writeFileSync(path.join(draftsDir, isDifferentFile ? newMetaName : oldMetaName), JSON.stringify(meta, null, 2), 'utf8');
+                    if (isDifferentFile) fs.unlinkSync(path.join(draftsDir, oldMetaName)); // Delete old
                 } catch (e) {
                     // Fallback if semantic update fails: just rename
-                    fs.renameSync(path.join(draftsDir, oldMetaName), path.join(draftsDir, newMetaName));
+                    if (isDifferentFile) fs.renameSync(path.join(draftsDir, oldMetaName), path.join(draftsDir, newMetaName));
                 }
                 renamedAny = true;
             }
 
-            // 2. [DEPRECATED] Rename Registered Configs
-            // Individual config files are removed. Renaming is skipped.
-
             // 3. Rename Converted Script
             if (fs.existsSync(path.join(scriptsDir, oldPyName))) {
-                fs.renameSync(path.join(scriptsDir, oldPyName), path.join(scriptsDir, newPyName));
+                if (isDifferentFile) fs.renameSync(path.join(scriptsDir, oldPyName), path.join(scriptsDir, newPyName));
                 renamedAny = true;
             }
 
-            // 4. Rename Original Script (if exists) -> DEPRECATED
-            // if (fs.existsSync(path.join(originalDir, oldPyName))) {
-            //     fs.renameSync(path.join(originalDir, oldPyName), path.join(originalDir, newPyName));
-            // }
-
-            // 5. Update Registry
+            // 4. Update Registry
             if (fs.existsSync(registryPath)) {
                 try {
                     let registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
-                    const entryIndex = registry.findIndex(r => r.name === oldPyName || r.filename === oldPyName);
+                    // Robust Lookup: Find by filename, current display name, or old clean name
+                    const entryIndex = registry.findIndex(r => 
+                        r.filename === oldPyName || 
+                        r.name === oldName || 
+                        r.name === cleanOld ||
+                        r.name === oldPyName
+                    );
+
                     if (entryIndex >= 0) {
-                        registry[entryIndex].name = newPyName;
-                        registry[entryIndex].filename = newPyName;
+                        // Preserving all other fields (team, description, columns, etc)
+                        registry[entryIndex] = {
+                            ...registry[entryIndex],
+                            name: displayName,
+                            filename: newPyName
+                        };
                         fs.writeFileSync(registryPath, JSON.stringify(registry, null, 2), 'utf8');
                         renamedAny = true;
                     }
@@ -1756,8 +1778,10 @@ module.exports = function (app) {
                 if (attrMatch && attrMatch[1]) finalAllowAttributes = (attrMatch[1].toLowerCase() === 'true');
             } catch (e) { console.error("Error parsing boolean configs:", e); }
 
+            const cleanDisplayName = name.replace(/\.py$/, '').trim();
+
             const config = {
-                name: `${name}.py`,
+                name: cleanDisplayName,
                 filename: pyFilename,
                 team: team || "Unassigned",
                 description: description || "Custom User Script",
@@ -1804,7 +1828,12 @@ module.exports = function (app) {
             }
 
             // Upsert Logic: Find existing to preserve other fields if needed, or merge new
-            const existingIndex = registry.findIndex(r => r.name === config.name);
+            // Upsert Logic: Check both name and filename to prevent duplicates
+            const existingIndex = registry.findIndex(r => 
+                r.name === cleanDisplayName || 
+                r.filename === pyFilename ||
+                r.name === pyFilename
+            );
 
             if (existingIndex >= 0) {
                 registry[existingIndex] = {
@@ -1860,6 +1889,15 @@ module.exports = function (app) {
                 'TestScript.py'
             ];
 
+            // Load Registry for name mapping
+            const registryPath = path.join(__dirname, '..', 'System', 'scripts_registry.json');
+            let registry = [];
+            if (fs.existsSync(registryPath)) {
+                try {
+                    registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
+                } catch (e) { console.error("Registry load failed", e); }
+            }
+
             const files = fs.readdirSync(scriptsDir)
                 .filter(file => {
                     if (!file.endsWith('.py')) return false;
@@ -1868,11 +1906,16 @@ module.exports = function (app) {
                     if (SYSTEM_FILES.includes(file)) return false;
                     return true;
                 })
-                .map(file => ({
-                    name: file,
-                    path: path.join(scriptsDir, file),
-                    mtime: fs.statSync(path.join(scriptsDir, file)).mtime
-                }))
+                .map(file => {
+                    const regItem = registry.find(r => r.filename === file);
+                    const stats = fs.statSync(path.join(scriptsDir, file));
+                    return {
+                        name: regItem ? regItem.name : file.replace('.py', '').replace(/_/g, ' '),
+                        filename: file,
+                        path: path.join(scriptsDir, file),
+                        mtime: stats.mtime
+                    };
+                })
                 .sort((a, b) => b.mtime - a.mtime); // Sort by newest first
 
             res.json(files);
@@ -1887,9 +1930,31 @@ module.exports = function (app) {
         const { filename } = req.query;
         if (!filename) return res.status(400).json({ error: 'Filename required' });
 
-        const scriptPath = path.join(__dirname, '..', 'Converted Scripts', filename);
+        const scriptsDir = path.join(__dirname, '..', 'Converted Scripts');
+        
+        // Robust filename resolution
+        const cleanName = filename.replace('.py', '').trim();
+        const sanitizedName = cleanName.replace(/ /g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
 
-        if (!fs.existsSync(scriptPath)) {
+        const filenamesToTry = [
+            filename,
+            `${cleanName}.py`,
+            `${sanitizedName}.py`
+        ];
+
+        let scriptPath = null;
+        let finalFilename = filename;
+
+        for (const f of filenamesToTry) {
+            const p = path.join(scriptsDir, f);
+            if (fs.existsSync(p) && fs.lstatSync(p).isFile()) {
+                scriptPath = p;
+                finalFilename = f;
+                break;
+            }
+        }
+
+        if (!scriptPath) {
             return res.status(404).json({ error: 'Script not found' });
         }
 
@@ -2014,7 +2079,7 @@ module.exports = function (app) {
 
         const pythonProcess = spawn('python', [reverserPath], {
             windowsHide: true,
-            env: { ...process.env, PYTHONIOENCODING: 'utf-8', GOOGLE_API_KEY: GOOGLE_API_KEY }
+            env: { ...process.env, PYTHONIOENCODING: 'utf-8', 'GOOGLE_API_KEY': getGoogleApiKey() }
         });
 
         let stdoutData = '';
@@ -2074,12 +2139,12 @@ module.exports = function (app) {
 
             const metaPath = path.join(draftsDir, filename + '.meta.json');
             const meta = {
+                name: name.replace('.py', '').trim(), // Preserve human readable name
                 description: description || "",
                 generationPrompt: generationPrompt || description || "", // Fallback for legacy
                 inputColumns: finalInputColumns,
                 team: team || "Unassigned",
                 groupByColumn: groupByColumn,
-                isMultithreaded: isMultithreaded,
                 isMultithreaded: isMultithreaded,
                 enableGeofencing: req.body.enableGeofencing || false,
                 allowAdditionalAttributes: req.body.allowAdditionalAttributes || false,
@@ -2132,11 +2197,13 @@ module.exports = function (app) {
                     if (fs.existsSync(metaPath)) {
                         try { meta = JSON.parse(fs.readFileSync(metaPath, 'utf8')); } catch (e) { }
                     }
+                    const stats = fs.statSync(path.join(draftsDir, file));
                     return {
-                        name: file,
+                        name: meta.name || file.replace('.py', '').replace(/_/g, ' '),
+                        filename: file, // Truth source: actual filename on disk
                         path: path.join(draftsDir, file),
-                        mtime: fs.statSync(path.join(draftsDir, file)).mtime,
-                        ...meta // Spread metadata (team, description)
+                        mtime: stats.mtime,
+                        ...meta // Spread metadata (overwrites name/filename if present in meta)
                     };
                 })
                 .sort((a, b) => b.mtime - a.mtime);
@@ -2149,17 +2216,44 @@ module.exports = function (app) {
     app.get('/api/scripts/content-draft', (req, res) => {
         const { filename } = req.query;
         if (!filename) return res.status(400).json({ error: "Filename required" });
-        const draftsDir = path.join(__dirname, '..', 'Draft Scripts');
-        const scriptPath = path.join(draftsDir, filename);
 
-        if (fs.existsSync(scriptPath)) {
+        const draftsDir = path.join(__dirname, '..', 'Draft Scripts');
+        
+        // Robust filename resolution
+        const cleanName = filename.replace('.py', '').trim();
+        const sanitizedName = cleanName.replace(/ /g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
+
+        const filenamesToTry = [
+            filename,
+            `${cleanName}.py`,
+            `${sanitizedName}.py`
+        ];
+
+        let scriptPath = null;
+        let finalFilename = filename;
+
+        for (const f of filenamesToTry) {
+            const p = path.join(draftsDir, f);
+            if (fs.existsSync(p) && fs.lstatSync(p).isFile()) {
+                scriptPath = p;
+                finalFilename = f;
+                break;
+            }
+        }
+
+        if (!scriptPath) {
+            return res.status(404).json({ error: "Draft not found" });
+        }
+
+        try {
             const content = fs.readFileSync(scriptPath, 'utf8');
+            const targetFilename = finalFilename; // Use the resolved filename for metadata check
 
             // Try load metadata
             let meta = {};
 
             try {
-                const metaPath = path.join(draftsDir, filename + '.meta.json');
+                const metaPath = path.join(draftsDir, targetFilename + '.meta.json');
                 if (fs.existsSync(metaPath)) {
                     let rawMeta = fs.readFileSync(metaPath, 'utf8');
                     // Strip BOM if present
@@ -2193,8 +2287,9 @@ module.exports = function (app) {
                 inputColumns: meta.inputColumns || [],
                 meta: meta
             });
-        } else {
-            res.status(404).json({ error: "Draft not found" });
+        } catch (e) {
+            console.error("Draft read error:", e);
+            res.status(500).json({ error: "Failed to read draft" });
         }
     });
 

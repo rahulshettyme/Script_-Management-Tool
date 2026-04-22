@@ -351,6 +351,10 @@ if __name__ == "__main__":
             original_request = requests.Session.request
             
             def intercepted_request(self, method, url, *args, **kwargs):
+                import time
+                max_retries = 3
+                retry_count = 0
+                
                 # 1. Debug logging if enabled
                 if getattr(builtins, 'DEBUG_MODE', False) or auto_inject: # Force logs if injection active
                      print(f"\n📡 [INTERCEPTOR] {method.upper()} {url}", flush=True)
@@ -391,19 +395,38 @@ if __name__ == "__main__":
                     elif 'files' in kwargs and 'dto' in kwargs['files']:
                          print(f"   📦 Final DTO: {kwargs['files']['dto'][1]}", flush=True)
 
-                # 4. Execute original
-                response = original_request(self, method, url, *args, **kwargs)
-                
-                # 4. Debug response logging
-                if getattr(builtins, 'DEBUG_MODE', False):
-                    print(f"📥 [INTERCEPTOR] Response: {response.status_code}", flush=True)
-                    if response.status_code >= 400:
+                # 4. Execute original with RETRY LOOP for Overload
+                while retry_count <= max_retries:
+                    response = original_request(self, method, url, *args, **kwargs)
+                    
+                    # Detect Overload (Status 429/503 OR specific GCP error text)
+                    is_overloaded = False
+                    if response.status_code in [429, 503]:
+                        is_overloaded = True
+                    else:
                         try:
-                            preview = response.text[:200] if response.text else ""
-                            print(f"   ⚠️ Error: {preview}", flush=True)
+                            # Search for 'overload' or 'drop overload' in text
+                            if response.text and "unconditional drop overload" in response.text.lower():
+                                is_overloaded = True
                         except: pass
                         
-                return response
+                    if is_overloaded and retry_count < max_retries:
+                        retry_count += 1
+                        print(f"⚠️  [OVERLOAD] Server reported overload at {url}.", flush=True)
+                        print(f"   🕒 Pausing for 30s before retry... (Attempt {retry_count}/{max_retries})", flush=True)
+                        time.sleep(30)
+                        continue # RETRY
+                        
+                    # 5. Debug response logging (Only for final result)
+                    if getattr(builtins, 'DEBUG_MODE', False):
+                        print(f"📥 [INTERCEPTOR] Response: {response.status_code}", flush=True)
+                        if response.status_code >= 400:
+                            try:
+                                preview = response.text[:200] if response.text else ""
+                                print(f"   ⚠️ Error: {preview}", flush=True)
+                            except: pass
+                            
+                    return response
 
             requests.Session.request = intercepted_request
             print(f"✅ API Interceptor Active.", flush=True)

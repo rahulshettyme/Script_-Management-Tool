@@ -2,7 +2,7 @@
   {
     "name": "Area Audit.py",
     "filename": "Area_Audit.py",
-    "team": "QA",
+    "team": "Both",
     "description": "Performs area audit for plots, generating coordinates if needed.",
     "expected_columns": [
       "CAName",
@@ -57,7 +57,7 @@
   {
     "name": "Area Audit V2",
     "filename": "Area_Audit_V2.py",
-    "team": "Both",
+    "team": "QA",
     "description": "Performs area audit with dynamic area size (Acre/Hectare) and boundary resolution.",
     "expected_columns": [
       "CAName",
@@ -157,8 +157,8 @@
     "comments": ""
   },
   {
-    "name": "AddVariety.py",
-    "filename": "AddVariety.py",
+    "name": "Add Variety",
+    "filename": "Add_Variety.py",
     "team": "Unassigned",
     "description": "User Script",
     "expected_columns": [
@@ -217,8 +217,8 @@
     "generation_prompt": "Script Name: AddVariety\nExcel Columns: name,nickName,expectedHarvestDays,cropName,cropId,expectedYield,expectedYieldUnits,refrenceAreaUnits\n\nStep 1 [API]:\n  - Step/Variable Name: Crop API\n  - Call GET /services/farm/api/crops?size=1000\n  - Payload Type: QUERY\n  - Expected Response: [ {  \"id\" : 42851,  \"name\" : \"Brinjal\",  \"data\" : null,  \"parentId\" : null,  \"description\" : \"Brinjal Crop Description\",  \"alias\" : \"BRJ\",  \"srCropId\" : 40,  \"srCropCode\" : \"Brinjal\",  \"clientId\" : \"54dd149f-da01-4fe1-bb14-97c6a2c019f0\",  \"imageUrl\" : \"https://smartfarmplus-static.s3.ap-southeast-1.amazonaws.com/crop-images/brinjal.png\",  \"dewsEnabled\" : false}, {  \"id\" : 1001,  \"name\" : \"Wheat1\",  \"data\" : null,  \"parentId\" : null,  \"description\" : \"Wheat Crop Description\",  \"alias\" : \"WHT\",  \"srCropId\" : 23,  \"srCropCode\" : null,  \"clientId\" : \"72dd5baa-ebc8-4328-a290-98f6c2bfb7da\",  \"imageUrl\" : \"https://smartfarmplus-static.s3.ap-southeast-1.amazonaws.com/crop-images/wheat.png\",  \"dewsEnabled\" : false}]\n  - Instructions: Hit this API, get 'id' attribute for the column 'cropName' and write id in 'cropId' column\n\nStep 2 [LOGIC]:\n  - Logic: Create a static variable as \"locations\" and use below as values for the variable\n\"locations\": {\n                    \"bounds\": {\n                        \"northeast\": {\n                            \"lat\": 72.7087158,\n                            \"lng\": -66.3193754\n                        },\n                        \"southwest\": {\n                            \"lat\": 15.7760139,\n                            \"lng\": -173.2992296\n                        }\n                    },\n                    \"country\": \"United States\",\n                    \"placeId\": \"ChIJCzYy5IS16lQRQrfeQ5K5Oxw\",\n                    \"latitude\": 38.7945952,\n                    \"longitude\": -106.5348379,\n                    \"geoInfo\": {\n                        \"type\": \"FeatureCollection\",\n                        \"features\": [{\n                                \"type\": \"Feature\",\n                                \"properties\": {},\n                                \"geometry\": {\n                                    \"type\": \"Polygon\",\n                                    \"coordinates\": [[[-173.2992296, 15.7760139], [-66.3193754, 15.7760139], [-66.3193754, 72.7087158], [-173.2992296, 72.7087158], [-173.2992296, 15.7760139]]]\n                                }\n                            }\n                        ]\n                    },\n                    \"name\": \"United States\"\n                }\n\nStep 3 [API]:\n  - Step/Variable Name: Add Variety API\n  - Call POST /services/farm/api/varieties\n  - Payload Type: JSON\n  - Payload Example: {    \"data\": {        \"yieldPerLocation\": [{                \"data\": {},                \"locations\": {                    \"bounds\": {                        \"northeast\": {                            \"lat\": 72.7087158,                            \"lng\": -66.3193754                        },                        \"southwest\": {                            \"lat\": 15.7760139,                            \"lng\": -173.2992296                        }                    },                    \"country\": \"United States\",                    \"placeId\": \"ChIJCzYy5IS16lQRQrfeQ5K5Oxw\",                    \"latitude\": 38.7945952,                    \"longitude\": -106.5348379,                    \"geoInfo\": {                        \"type\": \"FeatureCollection\",                        \"features\": [{                                \"type\": \"Feature\",                                \"properties\": {},                                \"geometry\": {                                    \"type\": \"Polygon\",                                    \"coordinates\": [[[-173.2992296, 15.7760139], [-66.3193754, 15.7760139], [-66.3193754, 72.7087158], [-173.2992296, 72.7087158], [-173.2992296, 15.7760139]]]                                }                            }                        ]                    },                    \"name\": \"United States\"                },                \"expectedYield\": 999,                \"expectedYieldQuantity\": \"\",                \"expectedYieldUnits\": \"KILOGRAM\",                \"refrenceAreaUnits\": \"ACRE\"            }        ]    },    \"cropId\": 1728101,    \"name\": \"RS Test API Create Carrot 2\",    \"nickName\": \"RSTACC2\",    \"expectedHarvestDays\": 120,    \"processStandardDeduction\": null,    \"cropPrice\": null,    \"cropStages\": [],    \"seedGrades\": [],    \"harvestGrades\": [],    \"id\": null,    \"varietyAdditionalAttributeList\": []}\n  - Expected Response: {    \"id\": 3785102,    \"name\": \"RS Test API Create Carrot 3\",    \"description\": null,    \"expectedHarvestDays\": 120,    \"expectedQuantityPerAcre\": null,    \"rejectionPercentage\": null,    \"harvestUnitId\": null,    \"processStandardDeduction\": null,    \"daysForPreHarvestSampling\": null,    \"preferredSKUTypeId\": null,    \"stripTestFlag\": null,    \"autoArchivePlotFlag\": null,    \"autoArchivePlotDays\": null,    \"data\": {        \"yieldPerLocation\": [            {                \"data\": {},                \"locations\": {                    \"id\": null,                    \"name\": \"USA\",                    \"administrativeAreaLevel5\": null,                    \"administrativeAreaLevel4\": null,                    \"administrativeAreaLevel3\": null,                    \"administrativeAreaLevel2\": null,                    \"administrativeAreaLevel1\": null,                    \"country\": null,                    \"latitude\": null,                    \"longitude\": null,                    \"sublocalityLevel1\": null,                    \"sublocalityLevel2\": null,                    \"sublocalityLevel3\": null,                    \"sublocalityLevel4\": null,                    \"sublocalityLevel5\": null,                    \"geoInfo\": null,                    \"bounds\": null,                    \"placeId\": null                },                \"expectedYield\": 999,                \"expectedYieldQuantity\": \"\",                \"expectedYieldUnits\": \"KILOGRAM\",                \"refrenceAreaUnits\": \"ACRE\"            }        ],        \"companyYieldPerLocation\": [            {                \"expectedYield\": 999.0,                \"expectedYieldUnits\": \"KILOGRAM\",                \"refrenceAreaUnits\": \"ACRE\"            }        ]    },    \"parentId\": null,    \"cropId\": 1728101,    \"cropName\": \"Carrot\",    \"srVarietyId\": null,    \"srCropCode\": \"Carrot\",    \"clientId\": \"0af8b8da-abaf-48a1-9607-5aa65417439e\",    \"nickName\": \"RSTACC3\",    \"cropKey\": null,    \"subCompanyIds\": null,    \"companyId\": 1251,    \"seedGrades\": [],    \"harvestGrades\": [],    \"varietyAdditionalAttributes\": [],    \"deleted\": false,    \"cropStages\": []}\n  - Instructions: create payload from below values 1. yieldPerLocation.locations - same as static variable 'locations' 2. yieldPerLocation.expectedYield from expectedYield column 3. yieldPerLocation.expectedYieldUnits from expectedYieldUnits column 4. yieldPerLocation.refrenceAreaUnits from refrenceAreaUnits column 5. 'cropId' from extracted cropId in column 'cropId' 6. 'name' from column 'name' 7. 'nickName' from column nickName 8. 'expectedHarvestDays' from column expectedHarvestDays\n\nStep 4 [LOGIC]:\n  - Logic: add 2 columns status and API response. Add the result accordingly\n\n"
   },
   {
-    "name": "AddVarietyWithCropStage.py",
-    "filename": "AddVarietyWithCropStage.py",
+    "name": "Add Variety With CropStage",
+    "filename": "Add_Variety_With_CropStage.py",
     "team": "Unassigned",
     "description": "User Script",
     "expected_columns": [
@@ -304,8 +304,8 @@
     "groupByColumn": "name"
   },
   {
-    "name": "AddCropStagetoVariety.py",
-    "filename": "AddCropStagetoVariety.py",
+    "name": "Add Crop Stage to Variety",
+    "filename": "Add_Crop_Stage_to_Variety.py",
     "team": "Unassigned",
     "description": "Script to add or update variety to existing varieties. Note: This will not delete existing crop stages, it will only updated values and adds new if not existed before",
     "expected_columns": [
@@ -361,8 +361,8 @@
     "batchSize": 1
   },
   {
-    "name": "AddAdhocPlansToCA.py",
-    "filename": "AddAdhocPlansToCA.py",
+    "name": "Add Adhoc Plans to CA",
+    "filename": "Add_Adhoc_Plans_to_CA.py",
     "team": "Unassigned",
     "description": "QA Automation Script to Fetch Plan Type and Submit Plan Details via API",
     "expected_columns": [
@@ -499,63 +499,6 @@
     "generation_prompt": "Script Name: PR_Disable\nExcel Columns: id, name, deletion response, deletion status, request id\n\nStep 1 [API]:\n  - Step/Variable Name: Send Plot Deletion Request\n  - Call POST /services/farm/api/intelligence/croppable-areas/request\n  - Payload Type: JSON\n  - Payload Example: [df_in['id']]\n  - Expected Response: df_in['deletion response'], df_in['request id']\n  - Instructions: Sends POST for each `df_in['id']` (JSON array). Updates `df_in['deletion response']` and `df_in['request id']`.\n\nStep 2 [API]:\n  - Step/Variable Name: Check Plot Deletion Status\n  - Call GET /services/farm/api/intelligence/croppable-areas/request/status\n  - Payload Type: QUERY\n  - Payload Example: requestId = df_in['request id'] (or df_in['id'] for fallback)\n  - Expected Response: df_in['deletion status']\n  - Instructions: Waits, then sends GET for each `df_in['request id']` (or `df_in['id']` fallback). Updates `df_in['deletion status']`.\n\nStep 3 [LOGIC]:\n  - Logic: Saves the updated DataFrame back to the 'Plot_details' sheet in the Excel file, replacing the sheet.\n\n"
   },
   {
-    "name": "PR_Batch_Enable.py",
-    "filename": "PR_Batch_Enable.py",
-    "team": "Unassigned",
-    "description": "This scripts uses batch API to enable 25 plots at a time like UI and runs without threading to avoid overloading of system",
-    "expected_columns": [
-      "croppableAreaName",
-      "croppableAreaId",
-      "farmerId",
-      "Status",
-      "Code",
-      "API response",
-      "srPlotId"
-    ],
-    "columns": [
-      {
-        "name": "croppableAreaName",
-        "type": "Mandatory",
-        "description": "Auto-detected"
-      },
-      {
-        "name": "croppableAreaId",
-        "type": "Mandatory",
-        "description": "Auto-detected"
-      },
-      {
-        "name": "farmerId",
-        "type": "Mandatory",
-        "description": "Auto-detected"
-      },
-      {
-        "name": "Status",
-        "type": "Mandatory",
-        "description": "Auto-detected"
-      },
-      {
-        "name": "API response",
-        "type": "Mandatory",
-        "description": "Auto-detected"
-      },
-      {
-        "name": "Code",
-        "type": "Mandatory",
-        "description": "Auto-detected"
-      },
-      {
-        "name": "srPlotId",
-        "type": "Mandatory",
-        "description": "Auto-detected"
-      }
-    ],
-    "requiresLogin": true,
-    "isMultithreaded": true,
-    "batchSize": 25,
-    "groupByColumn": "",
-    "generation_prompt": "Script Name: PR_Batch_Enable\nExcel Columns: croppableAreaName, croppableAreaId, farmerId, Status, Code, API response, srPlotId\n\nStep 1 [API]:\n  - Step/Variable Name: PR_Batch\n  - Call POST /services/farm/api/croppable-areas/plot-risk/batch\n  - Payload Type: JSON\n  - Payload Example: [{\"croppableAreaId\":24111,\"farmerId\":1651},{\"croppableAreaId\":24112,\"farmerId\":1651},{\"croppableAreaId\":24113,\"farmerId\":1651}]\n  - Expected Response: {  \"srPlotDetails\" : {    \"24112\" : {      \"status\" : \"IN_PROGRESS\",      \"message\" : \"Boundary Creation Successful\",      \"plotriskEnabled\" : true,      \"features\" : [ \"PLOTRISK\" ],      \"providers\" : [ \"planet\", \"sentinel2\", \"landsat\" ],      \"srPlotId\" : \"171914493524112\"    },    \"24113\" : {      \"status\" : \"IN_PROGRESS\",      \"message\" : \"Boundary Creation Successful\",      \"plotriskEnabled\" : true,      \"features\" : [ \"PLOTRISK\" ],      \"providers\" : [ \"planet\", \"sentinel2\", \"landsat\" ],      \"srPlotId\" : \"171914493524113\"    },    \"24111\" : {      \"status\" : \"SF_VALIDATION_FAILED\",      \"error\" : \"caauditnull\",      \"message\" : \"CroppableArea not Audited\",      \"srPlotId\" : \"171914493524111\",      \"features\" : [ \"PLOTRISK\" ]    }  }}\n  - Instructions: construct payload using croppableAreaId and farmerId in excel. For each API Call, create a body with maximum of 25 croppableAreaId -farmerId combinations and then co to next API if the status code is 200, write the status for each croppableAreaId in the request as 'Success' in column 'Status' (or 'Failed' if Validation Failed) and the status code in 'Code'. From response, read 'message' attribute for each 'croppableAreaId' like in example response and add it in 'API response' column. If API failed (not status 200), write entire response for each 'croppableAreaId' in 'API response' column and 'Status' column as 'Failed' and status code in 'Code'\n\n"
-  },
-  {
     "name": "CheckAndRemoveAreaAuditOutsideLocation.py",
     "filename": "CheckAndRemoveAreaAuditOutsideLocation.py",
     "team": "Unassigned",
@@ -657,7 +600,7 @@
     "generation_prompt": "Script Name: CheckAndRemoveAreaAuditOutsideLocation\nExcel Columns: CA_ID, CA_Name, Latitude, Longitude, is_outside_location, area_audit_status, area_audit_api_response\n\nOUTPUT MAPPING CONFIGURATION:\n- UI Output Definition:\n- UI Column 'ID': Set to 'CA_ID' (Logic: from excel column 'CA_ID')\n- UI Column 'Name': Set to 'CA_Name' (Logic: from excel column 'CA_Name')\n- UI Column 'Status': Set to 'Success or Fail ' (Logic: Success if response attribute 'cropAudited' = false\nFail if  response attribute 'cropAudited' = true)\n- UI Column 'Response': Set to 'cropAudited =  true or cropAudited =  false ' (Logic: put the response attribute cropAudited and its value as 'cropAudited =  false' or 'cropAudited =  true'........)\n- Excel Output Definition:\n   - Column 'is_outside_india': Set to '' (Logic: depending on the result of Embedded India Polygon Check - Ray Casting)\n   - Column 'area_audit_status': Set to '' (Logic: Success if response attribute 'cropAudited' = false\nFail if  response attribute 'cropAudited' = true)\n   - Column 'area_audit_api_response': Set to '' (Logic: put the response attribute cropAudited and its value)\nIMPORTANT: Include this configuration as a comment block at the top of the generated Python script for reference.\n\nStep 1 [LOGIC]:\n  - Logic: Use embedded simplified polygon coordinates (Ray Casting logic) of the location provided by user instead of downloading shapefiles. Use google API for finding the location.\n\nStep 2 [LOGIC]:\n  - Logic: Read input Excel, validate each row using the Latitude and Longitude columns.\n\nStep 3 [LOGIC]:\n  - Logic: Implement a 'is_point_in_polygon(lat, lon, polygon)' function using Ray Casting algorithm. Check if each point is outside the embedded locations's geometry. If the point is outside, mark column 'is_outside_location' as 'Yes' in excel, otherwise mark it as 'No'\n\nStep 4 [API]:\n  - Step/Variable Name: Delete Croppable Area Audit\n  - Call DELETE /services/farm/api/croppable-areas/{ca_id}/area-audit\n  - Payload Type: QUERY\n  - Expected Response: {  \"id\" : 16810,  \"cropUnits\" : 0,  \"name\" : \"RS not enabled Async Feature 2 A\",  \"expectedHarvestDate\" : null,  \"expectedQuantity\" : null,  \"organic\" : null,  \"status\" : \"ACCEPTED\",  \"cropexCropCode\" : null,  \"sowingDate\" : \"2026-01-01T00:00:00Z\",  \"cropAudited\" : false,  \"pruningDate\" : null,  \"data\" : {    \"location\" : \"///\",    \"ca-area-audit\" : null,    \"areaAuditNickName\" : null  },  \"projectId\" : 16551,  \"projectName\" : \"Rs Pr Async 2\",  \"landId\" : 16660,  \"landName\" : \"RS not enabled Async Feature 2 A\",  \"varietyId\" : null,  \"varietyName\" : null,  \"actualCropStageId\" : null,  \"actualCropStageName\" : null,  \"expectedCropStageId\" : null,  \"expectedCropStageName\" : null,  \"cropId\" : null,  \"cropName\" : null,  \"srCropId\" : null,  \"varietySrCropId\" : null,  \"varietySrCropCode\" : null,  \"ownerId\" : 6401,  \"ownerFirstName\" : \"RS PR Enable Filter F 3\",  \"landSoilTypeName\" : \"Black\",  \"landIrrigationTypeName\" : \"Basin Irrigation\",  \"auditedArea\" : null,  \"usableArea\" : {    \"count\" : 1.0  },  \"declaredArea\" : {    \"count\" : 1.0  },  \"orderNumber\" : null,  \"tasks\" : [ ],  \"cropUnitList\" : [ ],  \"massUploadUserId\" : null,  \"images\" : null,  \"splitBy\" : null,  \"splitDate\" : null,  \"lastModifiedDate\" : \"2026-02-02T07:55:41.614Z\",  \"externalId\" : null,  \"assignedToFarmerIds\" : null,  \"assignedToFarmerNames\" : null,  \"userNames\" : null,  \"planTypeId\" : null,  \"planTypeName\" : null,  \"detailingStatus\" : \"ONGOING\",  \"clientId\" : \"8593944b-da96-473d-85cc-ad737cb05c26\",  \"reestimatedDate\" : null,  \"reestimatedValue\" : null,  \"receivedHarvest\" : 0.0,  \"hasTaskStarted\" : false,  \"latitude\" : null,  \"longitude\" : null,  \"altitude\" : null,  \"areaAudit\" : null,  \"plotScore\" : 0,  \"farmerCode\" : \"RSPREFF3\",  \"topFieldAlertName\" : null,  \"topReportedLoss\" : null,  \"lossReported\" : null,  \"nameCounter\" : null,  \"reasonId\" : null,  \"reasonName\" : null,  \"projectAssetId\" : 16760,  \"srPlotId\" : null,  \"farmerCropId\" : null,  \"userIds\" : null,  \"acreSquareCaId\" : null,  \"split\" : false,  \"landClientId\" : \"8d987fda-1b26-4a34-ba86-b15cbc27dc10\",  \"ownerClientId\" : \"6a5c5afe-7e8b-4408-beb6-bc9c2fe1b656\",  \"projectClientId\" : \"780298f0-d325-4907-a83f-51802566ea1e\",  \"deleted\" : false,  \"massUpload\" : false,  \"plotClosure\" : false,  \"isIgnoreTaskStarted\" : false}\n  - Instructions: For each row where 'is_outside_location' is 'YES', call DELETE API using 'row['CA_ID']'. Record status and API response.\n\n"
   },
   {
-    "name": "Add_Farmer_Tag.py",
+    "name": "Add Farmer Tag",
     "filename": "Add_Farmer_Tag.py",
     "team": "Both",
     "description": "Add tags to farmers. \nNote: This script will update tag in excel to existing tags. It wont delete the existing tag.",
@@ -751,8 +694,8 @@
     "isReusable": true
   },
   {
-    "name": "AddFarmer.py",
-    "filename": "AddFarmer.py",
+    "name": "Add Farmer",
+    "filename": "Add_Farmer.py",
     "team": "Both",
     "description": "Add farmer by searching the User using the name provided\nNote: If tenant has additional attributes, select the checkbox and mention attribute key to get column in Excel",
     "expected_columns": [
@@ -845,8 +788,8 @@
     "generation_prompt": "Script Name: AddFarmer\nExcel Columns: Farmer Name, Farmer Code, Phone Number, AssignedTo, UserID, Address, Address Component (non mandatory), Status, Farmer ID, Response\n\nOUTPUT MAPPING CONFIGURATION:\n- UI Output Definition:\n- UI Column 'Farmer Name': Set to 'Farmer Name' (Logic: from excel column 'Farmer Name')\n- UI Column 'Status': Set to '' (Logic: 'Pass' if Farmer create response in 200, else 'Fail')\n- UI Column 'Farmer ID': Set to '' (Logic: attribute 'id' from response of farmer create if status is pass, else 'NA')\n- Excel Output Definition:\n   - Column 'UserID': Set to 'user response id' (Logic: id from user fetch is user found)\n   - Column 'Status': Set to 'Pass or Fail' (Logic: 'Pass' if Farmer create response in 200, else 'Fail')\n   - Column 'Farmer ID': Set to 'id' (Logic: id from farmer create response if farmer created successfully)\n   - Column 'Response': Set to '' (Logic: 'Farmer Created Successfully' if farmer creation is success\nor 'User not Found' if user find is failed)\nIMPORTANT: Include this configuration as a comment block at the top of the generated Python script for reference.\n\nStep 1 [GEO]:\n  - Geo Location Logic: Create address component for each row using the column 'Address' for each row as below. Add a new column as 'Address Component (non mandatory)' to save this address. If the address is repeated in any row, use same result dont hit APIs again\n\n{\n    \"id\" : 5827070,\n    \"formattedAddress\" : \"Madhugiri, Karnataka 572132, India\",\n    \"postalCode\" : \"572132\",\n    \"locality\" : \"Madhugiri\",\n    \"data\" : null,\n    \"administrativeAreaLevel5\" : null,\n    \"administrativeAreaLevel4\" : null,\n    \"administrativeAreaLevel3\" : null,\n    \"administrativeAreaLevel2\" : \"Bangalore Division\",\n    \"administrativeAreaLevel1\" : \"Karnataka\",\n    \"country\" : \"India\",\n    \"latitude\" : 13.6643166,\n    \"longitude\" : 77.20889869999999,\n    \"placeId\" : \"ChIJsfkoVqO0sTsRLbvVqd06cTU\",\n    \"sublocalityLevel1\" : \"\",\n    \"sublocalityLevel2\" : \"\",\n    \"sublocalityLevel3\" : null,\n    \"sublocalityLevel4\" : null,\n    \"sublocalityLevel5\" : null,\n    \"houseNo\" : \"\",\n    \"buildingName\" : \"\",\n    \"landmark\" : \"\",\n    \"clientId\" : \"4b5c78b1-7579-4a59-8e8e-8bd35b738b8e\"\n  }\n  - IMPORTANT: You MUST import and use 'components.geofence_utils' for this step.\n  - Usage: boundary_data = geofence_utils.get_boundary(location_name, env_config.get('google_api_key'))\n  - CRITICAL: 'boundary_data' IS the direct result object. It is NOT wrapped in 'google_response' or 'data'.\n  - 'boundary_data' structure: { \"formatted_address\": \"...\", \"geometry\": { \"location\": {...}, \"viewport\": {...}, \"bounds\": {...} }, \"place_id\": \"...\", \"address_components\": [...], \"geojson_polygon\": {...} }\n  - NOTE: 'geojson_polygon' is ALREADY a FeatureCollection. DO NOT wrap it in another FeatureCollection or check for 'Polygon' type.\n  - CRITICAL: When mapping 'bounds' and 'geoInfo', ALWAYS prioritize 'geometry.bounds' over 'geometry.viewport' if available, as 'bounds' is the strict geopolitical boundary.\n  - CRITICAL: The final Output column MUST be a JSON string. Use 'json.dumps(output_payload)' to populate the row.\n  - YOU MUST PARSE 'boundary_data' directly to extract fields required by the logic (e.g. boundary_data['formatted_address'], boundary_data['geometry']['location']).\n\nStep 2 [MASTER]:\n  - Master Type: user\n  - Input Column: AssignedTo\n  - Output Column: UserID\n  - Lookup Path: id\n  - On Failure: Skip Row\n  - Run Method: search\n  - IMPORTANT: You MUST import and use 'components.master_search' for this step.\n  - The master_data_config is available in env_config, so master_search will auto-detect run_method (usually 'search').\n\nStep 3 [API]:\n  - Step/Variable Name: Create Farmer\n  - Call POST /services/farm/api/farmers\n  - Payload Type: DTO_FILE\n  - Payload Example: {    \"data\": {        \"mobileNumber\": \"9126050202\",        \"countryCode\": \"+91\"    },    \"firstName\": \"RS test 050202\",    \"farmerCode\": \"rstest050202\",    \"assignedTo\": [{            \"id\": 1401,            \"name\": \"RS Test Admin\"        }    ],    \"address\": {        \"country\": \"India\",        \"formattedAddress\": \"Madhugiri, Karnataka 572132, India\",        \"houseNo\": \"\",        \"buildingName\": \"\",        \"administrativeAreaLevel1\": \"Karnataka\",        \"locality\": \"Madhugiri\",        \"administrativeAreaLevel2\": \"Bangalore Division\",        \"sublocalityLevel1\": \"\",        \"sublocalityLevel2\": \"\",        \"landmark\": \"\",        \"postalCode\": \"572132\",        \"placeId\": \"ChIJsfkoVqO0sTsRLbvVqd06cTU\",        \"latitude\": 13.6643166,        \"longitude\": 77.20889869999999    }}\n  - Instructions: Create payload using excel as below 1. Attributes 'data.mobileNumber' and 'data.countryCode' using column 'Phone Number' which will have value in the format '91 7259123456' or '+91 7259123456'. If + is missing add yourself for attribute 2. Attribute 'firstName' using column 'Farmer Name' 3. attribute 'farmerCode' using column Farmer Code 4. attribute 'assignedTo.id' using user response fetched value in column 'UserID' 5. attribute 'assignedTo.name' using column 'AssignedTo' 6. attribute 'address' using parsed adress value in column 'Address Component (non mandatory)' If the response code is 400, add the attribute 'errorKey' value in excel column 'Response'\n\n"
   },
   {
-    "name": "AddAsset.py",
-    "filename": "AddAsset.py",
+    "name": "Add Asset",
+    "filename": "Add_Asset.py",
     "team": "Both",
     "description": "Add farmer by searching the farmer, Soil Type, Irrigation Type using the names provided\nNote: If tenant has additional attributes, select the checkbox and mention attribute key to get column in Excel",
     "expected_columns": [
@@ -934,7 +877,7 @@
     "generation_prompt": "Script Name: AddAsset\nExcel Columns: Asset Name, Farmer Name, Farmer_ID, Soil Type, Irrigation Type, Address, Declared Area\n\nOUTPUT MAPPING CONFIGURATION:\n- UI Output Definition:\n- UI Column 'Asset Name': Set to 'Asset Name' (Logic: from excel column 'Asset Name')\n- UI Column 'Status': Set to '' (Logic: 'Pass' if Asset create response in 200 or 201, else 'Fail')\n- UI Column 'Asset ID': Set to '' (Logic: attribute 'id' from response of asset create if status is pass, else 'NA')\n- Excel Output Definition:\n   - Column 'Asset ID': Set to 'id' (Logic: attribute 'id' from response of asset create if status is pass, else 'NA')\n   - Column 'Response': Set to '' (Logic: 'Asset Created Successfully' if asset creation is success\nor 'Farmer not Found' if farmer find is failed\nActual response if asset creation failed)\nIMPORTANT: Include this configuration as a comment block at the top of the generated Python script for reference.\n\nStep 1 [MASTER]:\n  - Master Type: farmer\n  - Input Column: Farmer Name\n  - Output Column: Farmer_ID\n  - Lookup Path: id\n  - On Failure: Skip Row\n  - Run Method: search\n  - IMPORTANT: You MUST import and use 'components.master_search' for this step.\n  - The master_data_config is available in env_config, so master_search will auto-detect run_method (usually 'search').\n\nStep 2 [MASTER]:\n  - Master Type: soiltype\n  - Input Column: Soil Type\n  - Output Column: Soil Type_id\n  - Lookup Path: id\n  - On Failure: Skip Row\n  - Run Method: once\n  - IMPORTANT: You MUST import and use 'components.master_search' for this step.\n  - CRITICAL OPTIMIZATION: This master type is configured as 'Run Once'.\n  - 1. use 'master_search.fetch_all(\"soiltype\", env_config)' OUTSIDE the loop to get all items.\n  - 2. use 'master_search.lookup_from_cache(cache_data, \"name\", input_value, \"id\")' INSIDE the loop.\n  - 3. Do NOT use 'master_search.search()' inside the loop for this type.\n\nStep 3 [MASTER]:\n  - Master Type: irrigationtype\n  - Input Column: Irrigation Type\n  - Output Column: Irrigation Type_id\n  - Lookup Path: id\n  - On Failure: Skip Row\n  - Run Method: once\n  - IMPORTANT: You MUST import and use 'components.master_search' for this step.\n  - CRITICAL OPTIMIZATION: This master type is configured as 'Run Once'.\n  - 1. use 'master_search.fetch_all(\"irrigationtype\", env_config)' OUTSIDE the loop to get all items.\n  - 2. use 'master_search.lookup_from_cache(cache_data, \"name\", input_value, \"id\")' INSIDE the loop.\n  - 3. Do NOT use 'master_search.search()' inside the loop for this type.\n\nStep 4 [GEO]:\n  - Geo Location Logic: Create address component for each row using the column 'Address' for each row as below. Add a new column as 'Address Component (non mandatory)' to save this address. If the address is repeated in any row, use same result dont hit APIs again\n\n{\n    \"formattedAddress\" : \"Madhugiri, Karnataka 572132, India\",\n    \"postalCode\" : \"572132\",\n    \"locality\" : \"Madhugiri\",\n    \"data\" : null,\n    \"administrativeAreaLevel5\" : null,\n    \"administrativeAreaLevel4\" : null,\n    \"administrativeAreaLevel3\" : null,\n    \"administrativeAreaLevel2\" : \"Bangalore Division\",\n    \"administrativeAreaLevel1\" : \"Karnataka\",\n    \"country\" : \"India\",\n    \"latitude\" : 13.6643166,\n    \"longitude\" : 77.20889869999999,\n    \"placeId\" : \"ChIJsfkoVqO0sTsRLbvVqd06cTU\",\n    \"sublocalityLevel1\" : \"\",\n    \"sublocalityLevel2\" : \"\",\n    \"sublocalityLevel3\" : null,\n    \"sublocalityLevel4\" : null,\n    \"sublocalityLevel5\" : null,\n    \"houseNo\" : \"\",\n    \"buildingName\" : \"\",\n    \"landmark\" : \"\",\n    \"clientId\" : \"4b5c78b1-7579-4a59-8e8e-8bd35b738b8e\"\n  }\n  - IMPORTANT: You MUST import and use 'components.geofence_utils' for this step.\n  - Usage: boundary_data = geofence_utils.get_boundary(location_name, env_config.get('google_api_key'))\n  - CRITICAL: 'boundary_data' IS the direct result object. It is NOT wrapped in 'google_response' or 'data'.\n  - 'boundary_data' structure: { \"formatted_address\": \"...\", \"geometry\": { \"location\": {...}, \"viewport\": {...}, \"bounds\": {...} }, \"place_id\": \"...\", \"address_components\": [...], \"geojson_polygon\": {...} }\n  - NOTE: 'geojson_polygon' is ALREADY a FeatureCollection. DO NOT wrap it in another FeatureCollection or check for 'Polygon' type.\n  - CRITICAL: When mapping 'bounds' and 'geoInfo', ALWAYS prioritize 'geometry.bounds' over 'geometry.viewport' if available, as 'bounds' is the strict geopolitical boundary.\n  - CRITICAL: The final Output column MUST be a JSON string. Use 'json.dumps(output_payload)' to populate the row.\n  - YOU MUST PARSE 'boundary_data' directly to extract fields required by the logic (e.g. boundary_data['formatted_address'], boundary_data['geometry']['location']).\n\nStep 5 [API]:\n  - Step/Variable Name: Create Asset\n  - Call POST /services/farm/api/assets\n  - Payload Type: DTO_FILE\n  - Payload Example: {    \"declaredArea\": {        \"count\": 10    },    \"name\": \"RS A 26110201\",    \"ownerId\": 3818052,    \"soilType\": {        \"id\": 1059    },    \"irrigationType\": {        \"id\": 1107    },    \"address\": {        \"country\": \"India\",        \"formattedAddress\": \"Madhugiri, Karnataka 572132, India\",        \"administrativeAreaLevel1\": \"Karnataka\",        \"locality\": \"Madhugiri\",        \"administrativeAreaLevel2\": \"Bangalore Division\",        \"sublocalityLevel1\": \"\",        \"sublocalityLevel2\": \"\",        \"landmark\": \"\",        \"postalCode\": \"572132\",        \"houseNo\": \"\",        \"buildingName\": \"\",        \"placeId\": \"ChIJsfkoVqO0sTsRLbvVqd06cTU\",        \"latitude\": 13.6643166,        \"longitude\": 77.20889869999999    }}\n  - Expected Response: {  \"id\" : 1701,  \"name\" : \"RS A 1\",  \"companyStatus\" : \"ACTIVE\",  \"data\" : { },  \"ownerId\" : 1651,  \"ownerFirstName\" : null,  \"soilType\" : {    \"id\" : 1059,    \"name\" : null,    \"description\" : null,    \"data\" : null,    \"clientId\" : null  },  \"irrigationType\" : {    \"id\" : 1107,    \"name\" : null,    \"description\" : null,    \"clientId\" : null,    \"data\" : null  },  \"surveyNumber\" : null,  \"leased\" : null,  \"auditedArea\" : {    \"count\" : null  },  \"usableArea\" : {    \"count\" : 4.05  },  \"declaredArea\" : {    \"count\" : 4.04686  },  \"availableArea\" : null,  \"images\" : { },  \"assetStatus\" : \"AVAILABLE\",  \"clientId\" : \"95f102da-d587-4015-b390-84a854cc994e\",  \"address\" : {    \"id\" : 1303,    \"formattedAddress\" : \"Madhugiri, Karnataka 572132, India\",    \"postalCode\" : \"572132\",    \"locality\" : \"Madhugiri\",    \"data\" : null,    \"administrativeAreaLevel5\" : null,    \"administrativeAreaLevel4\" : null,    \"administrativeAreaLevel3\" : null,    \"administrativeAreaLevel2\" : \"Bangalore Division\",    \"administrativeAreaLevel1\" : \"Karnataka\",    \"country\" : \"India\",    \"latitude\" : 13.6643166,    \"longitude\" : 77.20889869999999,    \"placeId\" : \"ChIJsfkoVqO0sTsRLbvVqd06cTU\",    \"sublocalityLevel1\" : \"\",    \"sublocalityLevel2\" : \"\",    \"sublocalityLevel3\" : null,    \"sublocalityLevel4\" : null,    \"sublocalityLevel5\" : null,    \"houseNo\" : \"\",    \"buildingName\" : \"\",    \"landmark\" : \"\",    \"clientId\" : \"9f356b90-f6db-4eb2-96cb-6490d38cbc20\"  },  \"ownerCode\" : null,  \"nameCounter\" : null,  \"acreSquareAssetId\" : null,  \"lastModifiedDate\" : \"2026-02-11T14:18:16.294Z\",  \"ownerClientId\" : null,  \"externalId\" : null,  \"massUpload\" : false,  \"deleted\" : false}\n  - Instructions: Create payload using excel as below  1. Attribute 'declaredArea.count' using column 'Declared Area'  2. attribute 'name' using column 'Asset Name'  3. attribute 'ownerId' using farmer response fetched value in column 'Farmer_ID'  4. attribute 'soilType.id' using soiltype master search 5. attribute 'irrigationType.id' using irrigation Type master search 6. attribute 'address' using parsed adress value in column 'Address Component (non mandatory)'  If the response code is 400, add the attribute 'title' value in excel column 'Response'\n\n"
   },
   {
-    "name": "Add_Asset_Tag.py",
+    "name": "Add Asset Tag",
     "filename": "Add_Asset_Tag.py",
     "team": "Both",
     "description": "Add tags to Assets. \nNote: This script will update tag in excel to existing tags. It wont delete the existing tag.",
@@ -993,8 +936,8 @@
     "generation_prompt": "Script Name: Add_Asset_Tag\nExcel Columns: Asset Name, Asset ID, Tag Name, Tag ID, Status, Response\n\nOUTPUT MAPPING CONFIGURATION:\n- UI Output Definition:\n- UI Column 'Asset Name': Set to '' (Logic: from excel)\n- UI Column 'Asset ID': Set to '' (Logic: from excel)\n- UI Column 'Tag Name': Set to '' (Logic: from excel)\n- UI Column 'Status': Set to '' (Logic: Pass if asset update API status code is 200 or 201, else Fail)\n- Excel Output Definition:\n   - Column 'Tag ID': Set to '' (Logic: attribute 'id' from asset tag API response)\n   - Column 'Status': Set to '' (Logic: 'Fail' if tag not found or if status code of asset update is not 200 or 201\n'Pass' if status of asset update is 200 or 201)\n   - Column 'Response': Set to '' (Logic: 'Tag not found' if tag not found or \nwhole response of asset update if status code is not 200 or 201\n'Tag updated to asset' if asset update response code is 200 or 201)\nIMPORTANT: Include this configuration as a comment block at the top of the generated Python script for reference.\n\nStep 1 [MASTER]:\n  - Master Type: assettag\n  - Input Column: Tag Name\n  - Output Column: Tag ID\n  - Lookup Path: id\n  - On Failure: Skip Row\n  - Run Method: once\n  - IMPORTANT: You MUST import and use 'components.master_search' for this step.\n  - CRITICAL OPTIMIZATION: This master type is configured as 'Run Once'.\n  - 1. use 'master_search.fetch_all(\"assettag\", env_config)' OUTSIDE the loop to get all items.\n  - 2. use 'master_search.lookup_from_cache(cache_data, \"name\", input_value, \"id\")' INSIDE the loop.\n  - 3. Do NOT use 'master_search.search()' inside the loop for this type.\n\nStep 2 [API]:\n  - Step/Variable Name: Fetch Asset Details\n  - Call GET /services/farm/api/assets/{Asset ID}\n  - Payload Type: QUERY\n  - Expected Response: {  \"id\" : 5936151,  \"name\" : \"RS AI 1\",  \"companyStatus\" : null,  \"data\" : {    \"rajaAssetAddAttr\" : \"2026-02-14T00:00:00.000Z\",    \"tags\" : [ 5929601 ]  },  \"ownerId\" : 5917951,  \"ownerFirstName\" : \"RS F 25311001\",  \"soilType\" : {    \"id\" : 1056,    \"name\" : \"Clay Loam\",    \"description\" : \"Clay Loam Soil Type Description\",    \"data\" : null,    \"clientId\" : \"115825fe-a0d3-4c95-a831-1dc4fa93d261\"  },  \"irrigationType\" : {    \"id\" : 1101,    \"name\" : \"Bore well\",    \"description\" : \"Bore well Irrigation Type Description\",    \"clientId\" : \"8db73384-94ab-43ad-9827-0ca9f30e2eea\",    \"data\" : null  },  \"surveyNumber\" : null,  \"leased\" : null,  \"auditedArea\" : null,  \"usableArea\" : {    \"count\" : 5.0  },  \"declaredArea\" : {    \"count\" : 5.0  },  \"availableArea\" : null,  \"images\" : { },  \"assetStatus\" : \"AVAILABLE\",  \"clientId\" : \"0705162e-dd48-47f6-bfd3-bf7d5950d24d\",  \"address\" : {    \"id\" : 5935832,    \"formattedAddress\" : \"Madhugiri, Karnataka 572132, India\",    \"postalCode\" : \"572132\",    \"locality\" : \"Madhugiri\",    \"data\" : null,    \"administrativeAreaLevel5\" : null,    \"administrativeAreaLevel4\" : null,    \"administrativeAreaLevel3\" : null,    \"administrativeAreaLevel2\" : \"Bangalore Division\",    \"administrativeAreaLevel1\" : \"Karnataka\",    \"country\" : \"India\",    \"latitude\" : 13.6643166,    \"longitude\" : 77.20889869999999,    \"placeId\" : \"ChIJsfkoVqO0sTsRLbvVqd06cTU\",    \"sublocalityLevel1\" : \"\",    \"sublocalityLevel2\" : \"\",    \"sublocalityLevel3\" : null,    \"sublocalityLevel4\" : null,    \"sublocalityLevel5\" : null,    \"houseNo\" : \"\",    \"buildingName\" : \"\",    \"landmark\" : \"\",    \"clientId\" : \"bf7fa3dc-56c8-4059-951f-681a76f1507f\"  },  \"ownerCode\" : \"RSF25311001\",  \"nameCounter\" : null,  \"acreSquareAssetId\" : null,  \"lastModifiedDate\" : \"2026-02-14T12:32:48.587Z\",  \"ownerClientId\" : \"ea8e94f6-8771-4b72-9ba7-875f86279d79\",  \"externalId\" : null,  \"massUpload\" : false,  \"deleted\" : false}\n  - Instructions: Fetches the complete details of the target farmer using the resolved farmer ID.\n\nStep 3 [LOGIC]:\n  - Logic: Extracts current tags from asset_data['data']['tags']. If the resolved tag_id is not already present, it's added to the list of tags. If the ['data']['tags'] directory not present add it. Prepares the asset_data object for the PUT request.\n\nStep 4 [API]:\n  - Step/Variable Name: Update Asset Tags\n  - Call PUT /services/farm/api/assets\n  - Payload Type: DTO_FILE\n  - Payload Example: {\"id\":5936903,\"name\":\"RS AI 8\",\"companyStatus\":null,\"data\":{\"rajaAssetAddAttr\":\"2026-02-16T00:00:00.000Z\"},\"ownerId\":5917951,\"ownerFirstName\":\"RS F 25311001\",\"soilType\":{\"id\":1056,\"name\":\"Clay Loam\",\"description\":\"Clay Loam Soil Type Description\",\"data\":null,\"clientId\":\"115825fe-a0d3-4c95-a831-1dc4fa93d261\"},\"irrigationType\":{\"id\":1101,\"name\":\"Bore well\",\"description\":\"Bore well Irrigation Type Description\",\"clientId\":\"8db73384-94ab-43ad-9827-0ca9f30e2eea\",\"data\":null},\"surveyNumber\":null,\"leased\":null,\"auditedArea\":{\"enableConversion\":\"true\",\"unit\":\"ACRE\"},\"usableArea\":{\"count\":5},\"declaredArea\":{\"count\":5,\"enableConversion\":\"true\",\"unit\":\"ACRE\"},\"availableArea\":null,\"images\":{},\"assetStatus\":\"AVAILABLE\",\"clientId\":\"041e3e99-77e4-42e6-b1ac-55ba6e09f5d4\",\"address\":{\"id\":5936735,\"formattedAddress\":\"Pune, Maharashtra, India\",\"postalCode\":\"\",\"locality\":\"Pune\",\"data\":null,\"administrativeAreaLevel5\":\"\",\"administrativeAreaLevel4\":\"\",\"administrativeAreaLevel3\":\"Pune\",\"administrativeAreaLevel2\":\"Pune Division\",\"administrativeAreaLevel1\":\"Maharashtra\",\"country\":\"India\",\"latitude\":18.5246091,\"longitude\":73.8786239,\"placeId\":\"ChIJARFGZy6_wjsRQ-Oenb9DjYI\",\"sublocalityLevel1\":\"\",\"sublocalityLevel2\":\"\",\"sublocalityLevel3\":\"\",\"sublocalityLevel4\":\"\",\"sublocalityLevel5\":\"\",\"houseNo\":\"\",\"buildingName\":\"\",\"landmark\":\"\",\"clientId\":\"02f5f29c-e3f6-41ec-a311-56de9f74ebac\"},\"ownerCode\":\"RSF25311001\",\"nameCounter\":null,\"acreSquareAssetId\":null,\"lastModifiedDate\":\"2026-02-16T17:55:47.963Z\",\"ownerClientId\":\"ea8e94f6-8771-4b72-9ba7-875f86279d79\",\"externalId\":null,\"deleted\":false,\"massUpload\":false}\n  - Expected Response: put_resp\n  - Instructions: Sends the updated asset_data (including new tags) to the API to update the asset. Only executed if a new tag was added.\n\n"
   },
   {
-    "name": "AddPlaces.py",
-    "filename": "AddPlaces.py",
+    "name": "Add Places",
+    "filename": "Add_Places.py",
     "team": "Both",
     "description": "Use this script to add places for the address provided",
     "expected_columns": [
@@ -1080,7 +1023,7 @@
     "generation_prompt": "Script Name: AddPlaces\nExcel Columns: name, type, tags, tag_id, latitude, longitude, address\n\nOUTPUT MAPPING CONFIGURATION:\n- UI Output Definition:\n- UI Column 'Name': Set to '' (Logic: from excel)\n- UI Column 'Status': Set to '' (Logic: 'Fail' if tag not found or if status code of place creation is not 200 or 201\n'Pass' if status of place creation is 200 or 201)\n- Excel Output Definition:\n   - Column 'tag_id': Set to '' (Logic: attribute 'id' from tag API response)\n   - Column 'Status': Set to '' (Logic: 'Fail' if tag not found or if status code of place creation is not 200 or 201\n'Pass' if status of place creation is 200 or 201)\n   - Column 'Response': Set to '' (Logic: 'Tag not found' if tag not found or \nwhole response of place creation if status code is not 200 or 201\n'Place added' if place creation response code is 200 or 201)\nIMPORTANT: Include this configuration as a comment block at the top of the generated Python script for reference.\n\nStep 1 [MASTER]:\n  - Master Type: plottag\n  - Input Column: tags\n  - Output Column: tag_id\n  - Lookup Path: id\n  - On Failure: Skip Row\n  - Run Method: search\n  - IMPORTANT: You MUST import and use 'components.master_search' for this step.\n  - The master_data_config is available in env_config, so master_search will auto-detect run_method (usually 'search').\n\nStep 2 [GEO]:\n  - Geo Location Logic: Generate address_component in the below format using 'latitude' and 'longitude' columns have values, else use column 'address'. Note: check only forst row to decide the method. If first row has 'latitude' and 'longitude', then searching using latitude and longitude is common for all rows (fail row immediately if first row have these and any subsequent rows dont have these). Else, search using location for all rows. \nFormat:\n{\n        \"country\": \"India\",\n        \"formattedAddress\": \"Kundapura, Karnataka, India\",\n        \"administrativeAreaLevel1\": \"Karnataka\",\n        \"locality\": \"Kundapura\",\n        \"administrativeAreaLevel2\": \"Mysore Division\",\n        \"sublocalityLevel1\": \"\",\n        \"sublocalityLevel2\": \"\",\n        \"landmark\": \"\",\n        \"postalCode\": \"\",\n        \"houseNo\": \"\",\n        \"buildingName\": \"\",\n        \"placeId\": \"ChIJcYwVewaOvDsRy73eNhezPjs\",\n        \"latitude\": 13.6235274,\n        \"longitude\": 74.6917418\n    }\n  - IMPORTANT: You MUST import and use 'components.geofence_utils' for this step.\n  - Usage: boundary_data = geofence_utils.get_boundary(location_name, env_config.get('google_api_key'))\n  - CRITICAL: 'boundary_data' IS the direct result object. It is NOT wrapped in 'google_response' or 'data'.\n  - 'boundary_data' structure: { \"formatted_address\": \"...\", \"geometry\": { \"location\": {...}, \"viewport\": {...}, \"bounds\": {...} }, \"place_id\": \"...\", \"address_components\": [...], \"geojson_polygon\": {...} }\n  - NOTE: 'geojson_polygon' is ALREADY a FeatureCollection. DO NOT wrap it in another FeatureCollection or check for 'Polygon' type.\n  - CRITICAL: When mapping 'bounds' and 'geoInfo', ALWAYS prioritize 'geometry.bounds' over 'geometry.viewport' if available, as 'bounds' is the strict geopolitical boundary.\n  - CRITICAL: The final Output column MUST be a JSON string. Use 'json.dumps(output_payload)' to populate the row.\n  - YOU MUST PARSE 'boundary_data' directly to extract fields required by the logic (e.g. boundary_data['formatted_address'], boundary_data['geometry']['location']).\n\nStep 3 [API]:\n  - Step/Variable Name: Create Place\n  - Call POST /services/farm/api/place\n  - Payload Type: JSON\n  - Payload Example: {    \"data\": null,    \"type\": \"PORT\",    \"name\": \"RS Kundapura Port\",    \"address\": {        \"country\": \"India\",        \"formattedAddress\": \"Kundapura, Karnataka, India\",        \"administrativeAreaLevel1\": \"Karnataka\",        \"locality\": \"Kundapura\",        \"administrativeAreaLevel2\": \"Mysore Division\",        \"sublocalityLevel1\": \"\",        \"sublocalityLevel2\": \"\",        \"landmark\": \"\",        \"postalCode\": \"\",        \"houseNo\": \"\",        \"buildingName\": \"\",        \"placeId\": \"ChIJcYwVewaOvDsRy73eNhezPjs\",        \"latitude\": 13.6235274,        \"longitude\": 74.6917418    },    \"latitude\": 13.6235274,    \"longitude\": 74.6917418}\n  - Expected Response: {  \"id\" : 3830202,  \"name\" : \"RS Kundapura Port\",  \"type\" : \"PORT\",  \"subType\" : null,  \"data\" : null,  \"images\" : null,  \"capacity\" : null,  \"address\" : {    \"id\" : 3830252,    \"formattedAddress\" : \"Kundapura, Karnataka, India\",    \"postalCode\" : \"\",    \"locality\" : \"Kundapura\",    \"data\" : null,    \"administrativeAreaLevel5\" : null,    \"administrativeAreaLevel4\" : null,    \"administrativeAreaLevel3\" : null,    \"administrativeAreaLevel2\" : \"Mysore Division\",    \"administrativeAreaLevel1\" : \"Karnataka\",    \"country\" : \"India\",    \"latitude\" : 13.6235274,    \"longitude\" : 74.6917418,    \"placeId\" : \"ChIJcYwVewaOvDsRy73eNhezPjs\",    \"sublocalityLevel1\" : \"\",    \"sublocalityLevel2\" : \"\",    \"sublocalityLevel3\" : null,    \"sublocalityLevel4\" : null,    \"sublocalityLevel5\" : null,    \"houseNo\" : \"\",    \"buildingName\" : \"\",    \"landmark\" : \"\",    \"clientId\" : \"d682cbce-d104-4800-a95e-d0ce02de2091\"  },  \"areaAudit\" : null,  \"auditedArea\" : null,  \"visibility\" : true,  \"latitude\" : 13.6235274,  \"longitude\" : 74.6917418}\n  - Instructions: Create the payload using the below:  1.1 attribute 'data' as null if 'tags' column is empty 1.2 attribute data as \"data\" : {\"tags\" : [ 3811552 ]} if 'tags' column is empty 2. attribute 'type' from column 'type' in capitals 3. attribute 'name' from column 'name' 4. attribute 'address' from geo step 5. attributes 'latitude' and 'longitude' if columns have values else from address component of geo step\n\n"
   },
   {
-    "name": "Refresh_Task.py",
+    "name": "Refresh Task",
     "filename": "Refresh_Task.py",
     "team": "Both",
     "description": "Use the script to refresh task for task not started CAs",
@@ -1181,5 +1124,104 @@
         }
       ]
     }
+  },
+  {
+    "name": "PR Batch Enable",
+    "filename": "PR_Batch_Enable.py",
+    "team": "Both",
+    "description": "This scripts uses batch API to enable 25 plots at a time like UI and runs without threading to avoid overloading of system",
+    "expected_columns": [
+      "croppableAreaName",
+      "croppableAreaId",
+      "farmerId",
+      "Status",
+      "API response",
+      "srPlotId"
+    ],
+    "columns": [
+      {
+        "name": "croppableAreaName",
+        "type": "Mandatory",
+        "description": "Auto-detected"
+      },
+      {
+        "name": "croppableAreaId",
+        "type": "Mandatory",
+        "description": "Auto-detected"
+      },
+      {
+        "name": "farmerId",
+        "type": "Mandatory",
+        "description": "Auto-detected"
+      },
+      {
+        "name": "Status",
+        "type": "Mandatory",
+        "description": "Auto-detected"
+      },
+      {
+        "name": "API response",
+        "type": "Mandatory",
+        "description": "Auto-detected"
+      },
+      {
+        "name": "srPlotId",
+        "type": "Mandatory",
+        "description": "Auto-detected"
+      }
+    ],
+    "requiresLogin": true,
+    "isMultithreaded": false,
+    "batchSize": 25,
+    "groupByColumn": "",
+    "enableGeofencing": false,
+    "allowAdditionalAttributes": false,
+    "additionalAttributes": [],
+    "outputConfig": {
+      "uiMapping": [
+        {
+          "colName": "CA Name",
+          "value": "croppableAreaName",
+          "logic": "croppableAreaName from excel"
+        },
+        {
+          "colName": "CA ID",
+          "value": "croppableAreaId",
+          "logic": "croppableAreaId from excel"
+        },
+        {
+          "colName": "Status",
+          "value": "data.status",
+          "logic": "data.status of PR_Status API"
+        }
+      ],
+      "aiInstructions": "",
+      "excelMapping": [
+        {
+          "colName": "Status",
+          "value": "data.status",
+          "logic": "data.status of PR_Status API"
+        },
+        {
+          "colName": "API response",
+          "value": "data.message",
+          "logic": "data.message of PR_Status API"
+        },
+        {
+          "colName": "srPlotId",
+          "value": "data._id or data.srPlotId",
+          "logic": "data._id or data.srPlotId of PR_Status API"
+        }
+      ],
+      "isDynamicUI": true,
+      "passCriteria": {
+        "column": "Status",
+        "values": [
+          "IN_PROGRESS",
+          "QUEUED"
+        ]
+      }
+    },
+    "generation_prompt": "Script Name: PR Batch Enable\nExcel Columns: croppableAreaName, croppableAreaId, farmerId, Status, API response, srPlotId\n\nOUTPUT MAPPING CONFIGURATION:\n- UI Output Definition:\n- UI Column 'CA Name': Set to 'croppableAreaName' (Logic: croppableAreaName from excel)\n- UI Column 'CA ID': Set to 'croppableAreaId' (Logic: croppableAreaId from excel)\n- UI Column 'Status': Set to 'data.status' (Logic: data.status of PR_Status API)\n- Excel Output Definition:\n   - Column 'Status': Set to 'data.status' (Logic: data.status of PR_Status API)\n   - Column 'API response': Set to 'data.message' (Logic: data.message of PR_Status API)\n   - Column 'srPlotId': Set to 'data._id or data.srPlotId' (Logic: data._id or data.srPlotId of PR_Status API)\nIMPORTANT: Include this configuration as a comment block at the top of the generated Python script for reference.\n\nStep 1 [API]:\n  - Step/Variable Name: PR_Batch\n  - Call POST /services/farm/api/croppable-areas/plot-risk/batch\n  - Payload Type: JSON\n  - Payload Example: [{\"croppableAreaId\":5954054,\"farmerId\":1651},{\"croppableAreaId\":5956751,\"farmerId\":1651},{\"croppableAreaId\":5954058,\"farmerId\":1651},{\"croppableAreaId\":5955702,\"farmerId\":1651},{\"croppableAreaId\":5955703,\"farmerId\":1651}]\n  - Expected Response: {  \"createdAt\" : \"2026-04-21T14:46:36.607+00:00\",  \"id\" : \"69e78dccd06e715d3e196868\",  \"eventType\" : \"PLOTRISK_ENABLEMENT\",  \"status\" : \"QUEUED\",  \"updatedAt\" : \"2026-04-21T14:46:36.607+00:00\"}\n  - Instructions: construct payload using croppableAreaId and farmerId in excel.  For each API Call, create a body with maximum of 25 croppableAreaId -farmerId combinations and then go to next API if the status code is 200 If PR_Batch is failed (not status 200), write entire response for each 'croppableAreaId' in 'API response' column and mark 'Status' column as 'Failed'. Do not process these croppableAreaIds for next step\n\nStep 2 [API]:\n  - Step/Variable Name: PR_Status\n  - Call GET /services/farm/api/croppable-areas/async/plot-risk/status\n  - Payload Type: QUERY\n  - Delay: Wait for 10 seconds before hitting this API.\n  - Payload Example: croppableAreaIds=5954054,5956751,5954058,5955702,5955703\n  - Expected Response: {    \"5954058\": [        {            \"_id\": \"17126151455954058\",            \"error\": \"VALIDATION_FAILED\",            \"orgId\": \"sf_plus_qazone2\",            \"status\": \"FAILED\",            \"message\": \"Missing planet crop health model data, cropId: 315,countryCode: IN\",            \"features\": [                \"PLOTRISK\",                \"GERMINATION\"            ],            \"providers\": [                \"planet\",                \"sentinel2\"            ],            \"germinationEnabled\": true        }    ],    \"5955703\": [        {            \"error\": \"caauditnull\",            \"status\": \"SF_VALIDATION_FAILED\",            \"message\": \"CroppableArea not Audited\",            \"features\": [                \"PLOTRISK\"            ],            \"srPlotId\": \"17126151455955703\"        }    ],    \"5955702\": [        {            \"error\": \"cadatesnull\",            \"status\": \"SF_VALIDATION_FAILED\",            \"message\": \"Date of Sowing cannot be null\",            \"features\": [                \"PLOTRISK\"            ],            \"srPlotId\": \"17126151455955702\"        }    ],    \"5956751\": [        {            \"_id\": \"17126151455956751\",            \"orgId\": \"sf_plus_qazone2\",            \"status\": \"IN_PROGRESS\",            \"message\": \"Boundary Creation Successful\",            \"features\": [                \"PLOTRISK\",                \"GERMINATION\"            ],            \"providers\": [                \"planet\",                \"sentinel2\"            ],            \"plotriskEnabled\": true,            \"germinationEnabled\": true        }    ],    \"5954054\": [        {            \"error\": \"varietynull\",            \"status\": \"SF_VALIDATION_FAILED\",            \"message\": \"Croppable Area does not have a variety\",            \"features\": [                \"PLOTRISK\"            ],            \"srPlotId\": \"17126151455954054\"        }    ]}\n  - Instructions: Process this for the croppableAreaIds for which PR_Batch API status code was 200. below are the steps: 1. Hit the PR_Status with same croppableAreaIds used in each batch in PR_Batch API 2. From response, read response for each individual croppableAreaId passed in the API 3. Write response's 'status' attribute value in excel 'Status' column. Consider status 'IN_PROGRESS' and 'QUEUED' as pass counts in UI output 4. Write response's 'message' attribute value in 'API response' column.  5. if attribute '_id' or 'srPlotId' is present, write its value in excel 'srPlotId' column\n\n"
   }
 ]

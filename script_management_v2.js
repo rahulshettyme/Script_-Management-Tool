@@ -98,16 +98,64 @@ window.toggleTestAttributesInput = function (checkbox) {
     }
 }
 
-function toggleThreadSize(checkbox) {
+window.toggleParallelProcessing = function (checkbox) {
+    const batchProcessing = document.getElementById('enableBatchProcessing');
     const container = document.getElementById('threadSizeContainer');
-    const threadInput = document.getElementById('threadSize');
-    if (container) {
-        container.style.opacity = checkbox.checked ? '1' : '0.3';
-        container.style.pointerEvents = checkbox.checked ? 'all' : 'none';
+    
+    if (checkbox.checked) {
+        // Parallel active -> Disable Batch
+        if (batchProcessing) {
+            batchProcessing.checked = false;
+            batchProcessing.disabled = true;
+            batchProcessing.parentElement.style.opacity = '0.5';
+            batchProcessing.parentElement.title = "Batch processing is disabled when Parallel processing is active";
+        }
+        if (container) {
+            container.style.opacity = '1';
+            container.style.pointerEvents = 'all';
+        }
+    } else {
+        // Parallel inactive -> Enable Batch
+        if (batchProcessing) {
+            batchProcessing.disabled = false;
+            batchProcessing.parentElement.style.opacity = '1';
+            batchProcessing.parentElement.title = "";
+        }
+        // Hide batch size container if both are inactive
+        if (container && (!batchProcessing || !batchProcessing.checked)) {
+            container.style.opacity = '0.3';
+            container.style.pointerEvents = 'none';
+        }
+    }
+}
 
-        // If threading disabled, force batch size to 1 to avoid confusion
-        if (!checkbox.checked && threadInput) {
-            threadInput.value = "1";
+window.toggleBatchProcessing = function (checkbox) {
+    const parallelProcessing = document.getElementById('isMultithreaded');
+    const container = document.getElementById('threadSizeContainer');
+    
+    if (checkbox.checked) {
+        // Batch active -> Disable Parallel
+        if (parallelProcessing) {
+            parallelProcessing.checked = false;
+            parallelProcessing.disabled = true;
+            parallelProcessing.parentElement.style.opacity = '0.5';
+            parallelProcessing.parentElement.title = "Parallel processing is disabled when Batch processing is active";
+        }
+        if (container) {
+            container.style.opacity = '1';
+            container.style.pointerEvents = 'all';
+        }
+    } else {
+        // Batch inactive -> Enable Parallel
+        if (parallelProcessing) {
+            parallelProcessing.disabled = false;
+            parallelProcessing.parentElement.style.opacity = '1';
+            parallelProcessing.parentElement.title = "";
+        }
+        // Hide batch size container if both are inactive
+        if (container && (!parallelProcessing || !parallelProcessing.checked)) {
+            container.style.opacity = '0.3';
+            container.style.pointerEvents = 'none';
         }
     }
 }
@@ -375,19 +423,31 @@ async function loadScriptByName(filenameKey) {
 
             // Enable Proceed button immediately (Analysis optional)
             document.getElementById('proceedBtn').style.display = 'inline-block';
-            document.getElementById('scriptName').value = filename.replace('.py', '');
+            
+            // UI Name: Prioritize human readable name from meta, fallback to filename
+            const uiName = (data.meta && data.meta.name) ? data.meta.name : filename.replace('.py', '');
+            document.getElementById('scriptName').value = uiName;
+            
             window.lastGeneratedDescription = data.generationPrompt || "";
 
+            const parallelChecking = (data.meta && data.meta.isMultithreaded === true);
+            const batchChecking = (data.meta && data.meta.isMultithreaded === false && data.meta.batchSize > 1);
+
             const mtCheckbox = document.getElementById('isMultithreaded');
+            const batchCheckbox = document.getElementById('enableBatchProcessing');
+
             if (mtCheckbox) {
-                // If isMultithreaded is explicitly false, unchecked. Else default (true) or checked.
-                mtCheckbox.checked = (data.meta && data.meta.isMultithreaded === false) ? false : true;
-                toggleThreadSize(mtCheckbox); // Update UI state
+                mtCheckbox.checked = parallelChecking;
+                window.toggleParallelProcessing(mtCheckbox);
+            }
+            if (batchCheckbox) {
+                batchCheckbox.checked = batchChecking;
+                window.toggleBatchProcessing(batchCheckbox);
             }
 
             const threadSizeSelect = document.getElementById('threadSize');
             if (threadSizeSelect) {
-                threadSizeSelect.value = (data.meta && data.meta.batchSize) ? data.meta.batchSize : 10;
+                threadSizeSelect.value = (data.meta && data.meta.batchSize) ? data.meta.batchSize : 5;
             }
 
             // Populate Description
@@ -434,7 +494,7 @@ async function loadScriptByName(filenameKey) {
                         mtCheckbox.disabled = true;
                         mtLabel.innerHTML = "External Threading Disabled (Using Internal Script Threads) 🔒";
                         mtLabel.style.color = "#64748b"; // Slate-500
-                        toggleThreadSize(mtCheckbox);
+                        window.toggleParallelProcessing(mtCheckbox);
                     } else {
                         // Grouping Empty -> Enable Control
                         mtCheckbox.disabled = false;
@@ -458,7 +518,7 @@ async function loadScriptByName(filenameKey) {
                             mtLabel.innerHTML = "External Threading Disabled (Using Internal Script Threads) 🔒";
                             mtLabel.style.color = "#64748b";
                         }
-                        toggleThreadSize(mtCheckbox);
+                        window.toggleParallelProcessing(mtCheckbox);
                     }
                 }
             }
@@ -542,8 +602,17 @@ async function loadScriptByName(filenameKey) {
                         excelContainer.innerHTML = '<div style="text-align: center; padding: 20px; color: #64748b; font-style: italic;" id="noExcelRowsMsg">No Excel columns defined. The script will output raw API response by default.</div>';
                     }
                 }
+                if (conf.passCriteria) {
+                    if (document.getElementById('passCriteriaCol')) document.getElementById('passCriteriaCol').value = conf.passCriteria.column || "";
+                    if (document.getElementById('passCriteriaValues')) document.getElementById('passCriteriaValues').value = (conf.passCriteria.values || []).join(', ');
+                } else {
+                    if (document.getElementById('passCriteriaCol')) document.getElementById('passCriteriaCol').value = "";
+                    if (document.getElementById('passCriteriaValues')) document.getElementById('passCriteriaValues').value = "";
+                }
             } else {
                 // Clear fields if no config
+                if (document.getElementById('passCriteriaCol')) document.getElementById('passCriteriaCol').value = "";
+                if (document.getElementById('passCriteriaValues')) document.getElementById('passCriteriaValues').value = "";
                 const uiContainer = document.getElementById('uiOutputRowsContainer');
                 if (uiContainer) {
                     uiContainer.innerHTML = `
@@ -671,17 +740,20 @@ async function fetchScriptsList() {
         cachedScriptListData = [];
 
         // 1. Process Drafts
-        // Group by Name to find unique scripts
-        const activeNames = new Set(prodFiles.map(f => f.name));
+        // Group by Normalized Name to find unique scripts
+        // Normalize: spaces to underscores, lowercase, remove .py
+        const normalize = (n) => n.replace('.py', '').replace(/ /g, '_').toLowerCase();
+        const activeNormalNames = new Set(prodFiles.map(f => normalize(f.name)));
 
         // Orphan Drafts
         draftFiles.forEach(d => {
-            if (!activeNames.has(d.name)) {
+            const dNormal = normalize(d.filename || d.name); // Normalize by disk filename
+            if (!activeNormalNames.has(dNormal)) {
                 cachedScriptListData.push({
-                    name: d.name,
+                    name: d.name, // Human name
+                    filename: d.filename || d.name, // Disk filename
                     isDraft: true,
-                    date: new Date(d.mtime),
-                    display: d.name
+                    date: new Date(d.mtime)
                 });
             }
         });
@@ -689,10 +761,10 @@ async function fetchScriptsList() {
         // 2. Registered Scripts
         prodFiles.forEach(f => {
             cachedScriptListData.push({
-                name: f.name,
+                name: f.name, // Human name
+                filename: f.filename || f.name, // Disk filename
                 isDraft: false,
-                date: new Date(f.mtime),
-                display: f.name
+                date: new Date(f.mtime)
             });
         });
 
@@ -735,14 +807,17 @@ function renderScriptList(items) {
         `;
         div.onmouseover = function () { this.style.background = '#1e293b'; };
         div.onmouseout = function () { this.style.background = 'transparent'; };
-        div.onclick = () => confirmLoadScript(item.name, item.isDraft);
+        div.onclick = () => confirmLoadScript(item.filename || item.name, item.isDraft);
 
         const icon = item.isDraft ? '📝' : '✅';
         const typeLabel = item.isDraft ? '<span style="font-size:0.75rem; background:#f59e0b; color:black; padding:2px 6px; border-radius:4px; margin-right:8px;">DRAFT</span>' : '';
+        
+        // Priority: item.name (now human name from backend/registry)
+        const displayDisplayName = item.name;
 
         div.innerHTML = `
             <div>
-                <div style="font-weight: 500; color: #e2e8f0; margin-bottom: 2px;">${icon} ${item.display}</div>
+                <div style="font-weight: 500; color: #e2e8f0; margin-bottom: 2px;">${icon} ${displayDisplayName}</div>
                 <div style="font-size: 0.8rem; color: #94a3b8;">${item.date.toLocaleString()}</div>
             </div>
             </div>
@@ -978,6 +1053,9 @@ function parseAndPopulateSteps(description) {
                 const respM = body.match(/- Expected Response: (.*)/);
                 if (respM) row.querySelector('.step-response').value = respM[1].trim();
 
+                const delayM = body.match(/- Delay: Wait for (\d+) seconds before hitting this API./);
+                if (delayM) row.querySelector('.step-delay').value = delayM[1];
+
                 const instrM = body.match(/- Instructions: (.*)/);
                 if (instrM) row.querySelector('.step-instruction').value = instrM[1].trim();
 
@@ -1074,7 +1152,17 @@ function addStep(type) {
     // Header Row with Remove and Move Buttons (Fixed type="button")
     let html = `
         <div style="display: flex; justify-content: space-between; margin-bottom: 5px; align-items: center;">
-            <strong style="color: ${type === 'API' ? '#38bdf8' : type === 'GEO' ? '#86efac' : type === 'MASTER' ? '#c084fc' : '#eab308'}">${type} Step</strong>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <strong style="color: ${type === 'API' ? '#38bdf8' : type === 'GEO' ? '#86efac' : type === 'MASTER' ? '#c084fc' : '#eab308'}">${type} Step</strong>
+                ${type === 'API' ? `
+                    <div style="display: flex; align-items: center; gap: 5px; background: rgba(15, 23, 42, 0.5); padding: 2px 8px; border-radius: 4px; border: 1px solid #334155;">
+                        <span style="font-size: 0.75rem; color: #94a3b8;">Delay:</span>
+                        <input type="number" class="step-delay" placeholder="0" min="0" value="0"
+                            style="width: 35px; background: none; border: none; color: #eab308; font-size: 0.8rem; outline: none; text-align: center;" title="Seconds to wait before this step">
+                        <span style="font-size: 0.75rem; color: #64748b;">s</span>
+                    </div>
+                ` : ''}
+            </div>
             <div style="display: flex; gap: 5px; align-items: center;">
                 <button type="button" onclick="moveStepUp(this)" title="Move Up" style="background: rgba(255,255,255,0.05); border: 1px solid #475569; color: #94a3b8; cursor: pointer; border-radius: 4px; padding: 2px 6px; font-size: 0.8rem;">⬆️</button>
                 <button type="button" onclick="moveStepDown(this)" title="Move Down" style="background: rgba(255,255,255,0.05); border: 1px solid #475569; color: #94a3b8; cursor: pointer; border-radius: 4px; padding: 2px 6px; font-size: 0.8rem;">⬇️</button>
@@ -1435,32 +1523,42 @@ function renderAnalysis(data) {
         }
     }
 
-    // Auto-populate Threading Configs
-    if (data.isMultithreaded !== undefined) {
-        const mtCheckbox = document.getElementById('isMultithreaded');
-        if (mtCheckbox) {
-            mtCheckbox.checked = data.isMultithreaded;
-            toggleThreadSize(mtCheckbox);
-            console.log("Auto-detected threading:", data.isMultithreaded);
+    // Combined Parallel/Batch initialization
+    const mtCheckbox = document.getElementById('isMultithreaded');
+    const batchCheckbox = document.getElementById('enableBatchProcessing');
+    const bsSelect = document.getElementById('threadSize');
+
+    if (mtCheckbox && batchCheckbox) {
+        // Strict logic for backwards compatibility
+        const isParallel = (data.isMultithreaded === true);
+        const isBatch = (data.isMultithreaded === false && data.batchSize > 1);
+
+        mtCheckbox.checked = isParallel;
+        batchCheckbox.checked = isBatch;
+
+        // Initialize UI states
+        if (isParallel) window.toggleParallelProcessing(mtCheckbox);
+        if (isBatch) window.toggleBatchProcessing(batchCheckbox);
+        
+        if (!isParallel && !isBatch) {
+            // Default 1-by-1
+            mtCheckbox.checked = false;
+            batchCheckbox.checked = false;
+            if (document.getElementById('threadSizeContainer')) {
+                document.getElementById('threadSizeContainer').style.opacity = '0.3';
+                document.getElementById('threadSizeContainer').style.pointerEvents = 'none';
+            }
         }
     }
 
-    if (data.batchSize) {
-        const bsSelect = document.getElementById('threadSize');
-        if (bsSelect) {
-            // Ensure option exists or add it? For now assume standard options or set value
-            // If value not in list, maybe add it temporary?
-            // HTMLSelectElement.value sets it if exists.
-            bsSelect.value = data.batchSize;
-
-            // If custom value (e.g. 1000) not in dropdown, force it
-            if (bsSelect.value != data.batchSize) {
-                const opt = document.createElement('option');
-                opt.value = data.batchSize;
-                opt.text = data.batchSize;
-                opt.selected = true;
-                bsSelect.add(opt);
-            }
+    if (data.batchSize && bsSelect) {
+        bsSelect.value = data.batchSize;
+        if (bsSelect.value != data.batchSize) {
+            const opt = document.createElement('option');
+            opt.value = data.batchSize;
+            opt.text = data.batchSize;
+            opt.selected = true;
+            bsSelect.add(opt);
         }
     }
 }
@@ -1511,7 +1609,9 @@ async function proceedToTest() {
                     : [],
                 enableGeofencing: document.getElementById('enableGeofencing') ? document.getElementById('enableGeofencing').checked : false,
                 targetLocation: document.getElementById('targetLocation') ? document.getElementById('targetLocation').value : "",
-                batchSize: document.getElementById('isMultithreaded').checked ? (parseInt(document.getElementById('threadSize').value) || 10) : 1,
+                batchSize: (document.getElementById('isMultithreaded').checked || document.getElementById('enableBatchProcessing').checked)
+                    ? (parseInt(document.getElementById('threadSize').value) || 5)
+                    : 1,
                 groupByColumn: document.getElementById('groupByColumn').value,
                 outputConfig: getOutputConfigFromUI(),
                 status: 'draft',
@@ -1571,7 +1671,9 @@ async function runTest() {
             environment: window.globalEnv || "QA2",
             apiBaseUrl: (envConfig.apiurl && envConfig.apiurl[window.globalEnv || "QA2"]) || "",
             targetLocation: targetLoc,
-            batchSize: document.getElementById('threadSize') ? document.getElementById('threadSize').value : 1,
+            batchSize: (document.getElementById('isMultithreaded').checked || document.getElementById('enableBatchProcessing').checked)
+                ? (parseInt(document.getElementById('threadSize').value) || 5)
+                : 1,
             allowAdditionalAttributes: document.getElementById('allowAdditionalAttributes') ? document.getElementById('allowAdditionalAttributes').checked : false,
             additionalAttributes: document.getElementById('useTestAttributes') && document.getElementById('useTestAttributes').checked ?
                 document.getElementById('testAttributes').value.split(',').map(s => s.trim()).filter(s => s) : [],
@@ -1919,6 +2021,8 @@ function buildDescriptionFromSteps(name, globalCols, steps) {
             let payload = step.querySelector('.step-payload').value;
             const response = step.querySelector('.step-response').value;
             const instruction = step.querySelector('.step-instruction').value;
+            const delayEl = step.querySelector('.step-delay');
+            const delay = delayEl ? parseInt(delayEl.value) || 0 : 0;
 
             // New: Run Once Flag
             const isRunOnceEl = step.querySelector('.step-run-once');
@@ -1956,6 +2060,7 @@ function buildDescriptionFromSteps(name, globalCols, steps) {
                 description += `  - Run Once: Yes (Master Data / Setup Step)\n`;
             }
             description += `  - Payload Type: ${payloadType}\n`;
+            if (delay > 0) description += `  - Delay: Wait for ${delay} seconds before hitting this API.\n`;
             if (payload) description += `  - Payload Example: ${payload.replace(/\n/g, '')}\n`;
             if (response) description += `  - Expected Response: ${response.replace(/\n/g, '')}\n`;
             if (instruction) description += `  - Instructions: ${instruction.replace(/\n/g, ' ')}\n`;
@@ -2069,7 +2174,9 @@ async function importScript() {
                 : [],
             enableGeofencing: document.getElementById('enableGeofencing') ? document.getElementById('enableGeofencing').checked : false,
             groupByColumn: document.getElementById('groupByColumn').value,
-            batchSize: document.getElementById('isMultithreaded').checked ? (document.getElementById('threadSize').value || 1) : 1,
+            batchSize: (document.getElementById('isMultithreaded').checked || document.getElementById('enableBatchProcessing').checked)
+                ? (parseInt(document.getElementById('threadSize').value) || 5)
+                : 1,
             outputConfig: getOutputConfigFromUI()
         })
     });
@@ -2456,7 +2563,14 @@ function getOutputConfigFromUI() {
         }
     });
 
-    return { uiMapping, aiInstructions, excelMapping, isDynamicUI: true };
+    const passCriteriaCol = document.getElementById('passCriteriaCol') ? document.getElementById('passCriteriaCol').value : "";
+    const passCriteriaValues = document.getElementById('passCriteriaValues') ? document.getElementById('passCriteriaValues').value : "";
+    const passCriteria = (passCriteriaCol && passCriteriaValues) ? {
+        column: passCriteriaCol,
+        values: passCriteriaValues.split(',').map(v => v.trim()).filter(v => v)
+    } : null;
+
+    return { uiMapping, aiInstructions, excelMapping, isDynamicUI: true, passCriteria };
 }
 
 
@@ -2564,6 +2678,11 @@ async function autoPopulateStepsFromAI(code) {
                     row.querySelector('.step-payload').value = step.payload || '';
                     row.querySelector('.step-response').value = step.response || 'resp';
                     row.querySelector('.step-instruction').value = step.instruction || '';
+                    
+                    if (step.delay) {
+                        const delayInp = row.querySelector('.step-delay');
+                        if (delayInp) delayInp.value = step.delay;
+                    }
 
                     if (step.runOnce) {
                         const roBox = row.querySelector('.step-run-once');
@@ -2636,7 +2755,7 @@ function syncUIFromCode(code) {
         // Only update if not disabled by grouping logic
         if (!mtCheckbox.disabled) {
             mtCheckbox.checked = isTrue;
-            toggleThreadSize(mtCheckbox);
+            window.toggleParallelProcessing(mtCheckbox);
         }
     }
 }
@@ -2703,11 +2822,28 @@ function renderMockResults(data) {
             keys.forEach(k => {
                 const td = document.createElement('td');
                 const val = row[k];
+                const sVal = String(val).toLowerCase();
 
-                // Handle specific status coloring
-                if (k.toLowerCase() === 'status') {
-                    const sVal = String(val).toLowerCase();
-                    if (sVal === 'pass' || sVal === 'success' || sVal === 'true') {
+                let isStatusCol = false;
+                let isPass = false;
+
+                // 1. Check Custom Criteria (Higher Priority)
+                if (outMapping.passCriteria && outMapping.passCriteria.column && k === outMapping.passCriteria.column) {
+                    isStatusCol = true;
+                    if (outMapping.passCriteria.values && outMapping.passCriteria.values.length > 0) {
+                        isPass = outMapping.passCriteria.values.some(v => v.toLowerCase() === sVal);
+                    } else {
+                        isPass = (sVal === 'pass' || sVal === 'success' || sVal === 'true');
+                    }
+                } 
+                // 2. Default Criteria (Only for 'status' column)
+                else if (k.toLowerCase() === 'status') {
+                    isStatusCol = true;
+                    isPass = (sVal === 'pass' || sVal === 'success' || sVal === 'true');
+                }
+
+                if (isStatusCol) {
+                    if (isPass) {
                         td.innerHTML = `<span class="badge bg-success">${val}</span>`;
                         passCount++;
                     } else {

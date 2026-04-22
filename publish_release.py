@@ -13,6 +13,7 @@ INCLUDE_PATHS = [
     "style.css",
     "package.json",
     "requirements.txt",
+    "logo.png",
     "backend",          # Whole folder
     "System",           # Whole folder
     "Manager",          # Whole folder (filtered inside)
