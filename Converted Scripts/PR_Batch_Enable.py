@@ -1,3 +1,7 @@
+# CONFIG: enableGeofencing = False
+# CONFIG: allowAdditionalAttributes = False
+# EXPECTED_INPUT_COLUMNS: croppableAreaName, croppableAreaId, farmerId, Status, API response, srPlotId
+
 def run(data, token, env_config):
     import pandas as pd
     import builtins
@@ -6,7 +10,7 @@ def run(data, token, env_config):
     import json
     import requests
     import json
-    import concurrent.futures
+    import time
 
     def _log_req(method, url, **kwargs):
 
@@ -52,8 +56,15 @@ def run(data, token, env_config):
                     payload = f'[Multipart Files] Keys: {list(files.keys())}'
         if not payload:
             payload = 'No Payload'
-        print(f'[API_DEBUG] 📦 PAYLOAD: {payload}')
-        print(f'[API_DEBUG] ----------------------------------------------------------------')
+        payload_type = 'JSON' if kwargs.get('json') else 'Data'
+        if payload_type == 'Data' and isinstance(payload, str):
+            try:
+                json.loads(payload)
+                payload_type = 'Data (JSON)'
+            except:
+                pass
+        if not kwargs.get('json') and (not kwargs.get('data')) and (not payload_type == 'Data (JSON)'):
+            payload_type = 'Unknown/Multipart'
         try:
             if method == 'GET':
                 resp = requests.get(url, **kwargs)
@@ -61,11 +72,13 @@ def run(data, token, env_config):
                 resp = requests.post(url, **kwargs)
             elif method == 'PUT':
                 resp = requests.put(url, **kwargs)
+            elif method == 'DELETE':
+                resp = requests.delete(url, **kwargs)
             else:
                 resp = requests.request(method, url, **kwargs)
             body_preview = 'Binary/No Content'
             try:
-                if not resp.text:
+                if not resp.text or not resp.text.strip():
                     body_preview = '[Empty Response]'
                 else:
                     try:
@@ -93,6 +106,9 @@ def run(data, token, env_config):
 
     def _log_put(url, **kwargs):
         return _log_req('PUT', url, **kwargs)
+
+    def _log_delete(url, **kwargs):
+        return _log_req('DELETE', url, **kwargs)
 
     def _safe_iloc(row, idx):
         try:
@@ -206,90 +222,73 @@ def run(data, token, env_config):
     builtins.wb = wk
     wb = wk
 
+    def process_row(row, status_info=None, batch_error=None):
+        """
+    Standardizes the output row with required UI and Excel columns.
+    """
+        row['CA Name'] = row.get('croppableAreaName')
+        row['CA ID'] = row.get('croppableAreaId')
+        if batch_error:
+            row['Status'] = 'Failed'
+            row['API response'] = batch_error
+        elif status_info:
+            row['Status'] = status_info.get('status')
+            row['API response'] = status_info.get('message')
+            row['srPlotId'] = status_info.get('_id') or status_info.get('srPlotId')
+        return row
+
     def _user_run(data, token, env_config):
-        api_path = '/services/farm/api/croppable-areas/plot-risk/batch'
-        url = f'{base_url}{api_path}'
         headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
-        batch_size = 25
-        indexed_data = []
-        for i, row in enumerate(data):
+        final_output = []
+        for i in range(0, len(data), 25):
+            batch_rows = data[i:i + 25]
+            batch_payload = []
+            for row in batch_rows:
+                try:
+                    batch_payload.append({'croppableAreaId': int(row.get('croppableAreaId')), 'farmerId': int(row.get('farmerId'))})
+                except (ValueError, TypeError):
+                    batch_payload.append({'croppableAreaId': row.get('croppableAreaId'), 'farmerId': row.get('farmerId')})
+            batch_api_url = f'{base_url}/services/farm/api/croppable-areas/plot-risk/batch'
             try:
-                ca_id = row['croppableAreaId']
-                f_id = row['farmerId']
-                indexed_data.append({'croppableAreaId': ca_id, 'farmerId': f_id, '_original_row_index': i})
-            except KeyError:
-                row['Status'] = 'Input Error'
-                row['API response'] = 'Missing required input column: croppableAreaId or farmerId.'
-        for i in range(0, len(indexed_data), batch_size):
-            batch = indexed_data[i:i + batch_size]
-            if not batch:
-                continue
-            payload = []
-            ca_id_map = {}
-            for item in batch:
-                ca_id = item['croppableAreaId']
-                f_id = item['farmerId']
-                index = item['_original_row_index']
-                payload.append({'croppableAreaId': ca_id, 'farmerId': f_id})
-                ca_id_map[str(ca_id)] = index
-            try:
-                print(f'[Log] Sending batch of {len(payload)} items...')
-                response = _log_post(url, headers=headers, json=payload)
-                status_code = response.status_code
-                if status_code == 200:
-                    try:
-                        response_json = response.json()
-                        sr_plot_details = response_json.get('srPlotDetails', {})
-                        for ca_id_str, detail in sr_plot_details.items():
-                            original_index = ca_id_map.get(ca_id_str)
-                            if original_index is not None:
-                                row = data[original_index]
-                                item_status = detail.get('status', 'Unknown')
-                                if item_status == 'SF_VALIDATION_FAILED' or item_status == 'Failed':
-                                    row['Status'] = 'Failed'
-                                else:
-                                    row['Status'] = 'Success'
-                                row['Code'] = status_code
-                                message = detail.get('message', detail.get('error', f'No message found in details for CA {ca_id_str}'))
-                                row['API response'] = message
-                                sr_plot_id = detail.get('srPlotId')
-                                if sr_plot_id:
-                                    row['srPlotId'] = sr_plot_id
-                    except json.JSONDecodeError:
-                        error_msg = f'Request successful but failed to decode JSON response. Raw response snippet: {response.text[:200]}'
-                        for original_index in ca_id_map.values():
-                            row = data[original_index]
-                            row['Status'] = 'Failed (JSON Error)'
-                            row['Code'] = status_code
-                            row['API response'] = error_msg
+                print(f'[PR_BATCH] Processing batch of {len(batch_payload)} areas...')
+                response = _log_post(batch_api_url, json=batch_payload, headers=headers)
+                if not response.ok:
+                    error_response = response.text
+                    print(f'[PR_BATCH] Failed with status {response.status_code}')
+                    for row in batch_rows:
+                        final_output.append(process_row(row, batch_error=error_response))
+                    continue
+                print(f'[PR_BATCH] Success (200). Waiting 10 seconds for processing...')
+                time.sleep(10)
+                ca_ids = [str(item['croppableAreaId']) for item in batch_payload]
+                status_api_url = f'{base_url}/services/farm/api/croppable-areas/async/plot-risk/status'
+                params = {'croppableAreaIds': ','.join(ca_ids)}
+                status_res = _log_get(status_api_url, params=params, headers=headers)
+                if status_res.ok:
+                    status_data_map = status_res.json()
+                    for row in batch_rows:
+                        cid = str(row.get('croppableAreaId'))
+                        if cid in status_data_map and isinstance(status_data_map[cid], list) and (len(status_data_map[cid]) > 0):
+                            individual_status = status_data_map[cid][0]
+                            final_output.append(process_row(row, status_info=individual_status))
+                        else:
+                            row['Status'] = 'NOT_FOUND'
+                            row['API response'] = 'No status returned for this ID'
+                            final_output.append(process_row(row))
                 else:
-                    try:
-                        response_data = response.json()
-                    except json.JSONDecodeError:
-                        response_data = response.text
-                    error_response_str = json.dumps(response_data) if isinstance(response_data, dict) else str(response_data)
-                    for original_index in ca_id_map.values():
-                        row = data[original_index]
-                        row['Status'] = 'Failed'
-                        row['Code'] = status_code
-                        row['API response'] = f'API Call Failed (Status {status_code}). Response: {error_response_str}'
-            except requests.RequestException as e:
-                error_msg = str(e)
-                for original_index in ca_id_map.values():
-                    row = data[original_index]
-                    row['Status'] = 'Failed'
-                    row['Code'] = 'Exception'
-                    row['API response'] = f'Request Exception: {error_msg}'
-                    row['Status'] = 'Failed'
-                    row['Code'] = 'Exception'
-                    row['API response'] = f'Request Exception: {error_msg}'
-        import builtins
-        if hasattr(builtins, 'data_df'):
-            del builtins.data_df
-        return data
+                    status_error = f'Status API Error: {status_res.status_code} - {status_res.text}'
+                    print(f'[PR_STATUS] API Call failed: {status_error}')
+                    for row in batch_rows:
+                        final_output.append(process_row(row, batch_error=status_error))
+            except Exception as e:
+                print(f'[EXCEPTION] Error during batch processing: {str(e)}')
+                for row in batch_rows:
+                    final_output.append(process_row(row, batch_error=str(e)))
+        return final_output
+    "\nOUTPUT MAPPING CONFIGURATION:\n- UI Output Definition:\n  - UI Column 'CA Name': Set to 'croppableAreaName' (Logic: croppableAreaName from excel)\n  - UI Column 'CA ID': Set to 'croppableAreaId' (Logic: croppableAreaId from excel)\n  - UI Column 'Status': Set to 'data.status' (Logic: data.status of PR_Status API)\n- Excel Output Definition:\n   - Column 'Status': Set to 'data.status' (Logic: data.status of PR_Status API)\n   - Column 'API response': Set to 'data.message' (Logic: data.message of PR_Status API)\n   - Column 'srPlotId': Set to 'data._id or data.srPlotId' (Logic: data._id or data.srPlotId of PR_Status API)\n"
     res = _user_run(data, token, env_config)
     try:
-        if hasattr(builtins, 'data_df'):
+        if res is None and hasattr(builtins, 'data_df'):
             import pandas as pd
             if isinstance(builtins.data_df, pd.DataFrame):
                 res = builtins.data_df.where(pd.notnull(builtins.data_df), None).to_dict(orient='records')

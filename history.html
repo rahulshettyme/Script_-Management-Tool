@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Execution History – QA-Ops Workbench</title>
+    <meta name="description" content="Audit trail of all script executions in the QA-Ops Workbench.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="components/execution_history.css">
+
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #f5f7fa;
+            color: #264554;
+        }
+    </style>
+</head>
+
+<body class="eh-page">
+
+    <!-- Page Header -->
+    <header class="eh-header">
+        <div class="eh-header-left">
+            <img src="logo.png" alt="Cropin Logo" style="height: 38px;">
+            <div style="width: 1px; height: 28px; background: #d0d0d0;"></div>
+            <div class="eh-title-block">
+                <h1>
+                    <span style="font-weight:800; color:#0091d2;">QA-Ops</span>
+                    <span style="font-weight:500; color:#5f7d8c;">Workbench</span>
+                    <span style="font-weight:400; color:#b0bec5; font-size:1rem;"> / History</span>
+                </h1>
+                <span>Execution Audit Trail</span>
+            </div>
+        </div>
+        <a href="createbulkdata.html" class="eh-back-btn">← Back to Workbench</a>
+    </header>
+
+    <!-- Main Content -->
+    <main class="eh-container">
+        <!-- ExecutionHistoryManager mounts here -->
+        <div id="execution-history-root"></div>
+    </main>
+
+    <script src="components/execution_history.js"></script>
+    <script>
+        // Listen for prod role from parent iframe
+        let prodRole = null;
+        window.addEventListener('message', (event) => {
+            if (event && event.data && event.data.userRoleType) {
+                prodRole = event.data.userRoleType;
+                // If manager already initialized, it used local. Re-init with prod role.
+                if (window._ehManager) {
+                    window._ehManager.userRole = prodRole;
+                    window._ehManager._loadRecords().then(() => {
+                        window._ehManager._applyFilters();
+                        window._ehManager._renderTable();
+                    });
+                }
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            window._ehManager = new ExecutionHistoryManager('execution-history-root', {
+                userRole: prodRole // null on local; will be resolved by manager via /api/env-urls
+            });
+        });
+    </script>
+
+</body>
+</html>

@@ -12,6 +12,7 @@
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="components/login_component.css">
+    <link rel="stylesheet" href="components/execution_history.css">
     <style>
         body {
             background-color: #ffffff !important;
@@ -531,7 +532,7 @@
     <div class="container data-generate-container">
 
 
-        <header style="border-bottom: 2px solid #f0f0f0; padding-bottom: 1.25rem;">
+        <header style="border-bottom: 2px solid #f0f0f0; padding-bottom: 1.25rem; display: flex; align-items: center; justify-content: space-between;">
             <div style="display: flex; align-items: center; gap: 16px;">
                 <img src="logo.png" alt="Cropin Logo" style="height: 42px;">
                 <div style="width: 1px; height: 32px; background-color: #d0d0d0;"></div>
@@ -546,7 +547,15 @@
                         Console</span>
                 </div>
             </div>
+            <button id="toggle-history-btn"
+                style="display: inline-flex; align-items: center; gap: 6px; padding: 0.5rem 1.1rem; background: #f1f3f4; color: #264554; border: 1px solid #e0e0e0; border-radius: 6px; font-size: 0.875rem; font-weight: 500; cursor: pointer; transition: background 0.2s;"
+                onmouseover="this.style.background='#e2e8f0'" onmouseout="this.style.background='#f1f3f4'">
+                <span id="toggle-history-icon">📜</span> <span id="toggle-history-text">Execution History</span>
+            </button>
         </header>
+
+        <!-- Workbench View -->
+        <div id="workbench-view">
 
         <!-- Main Two-Column Layout -->
         <div class="main-layout-grid">
@@ -702,8 +711,9 @@
                     <div id="additional-attributes-input-container" class="hidden" style="margin-top: 0.5rem;">
                         <label class="form-label" style="font-size: 0.8em; color: #6c757d;">Enter Attribute Keys (comma
                             separated):</label>
-                        <input type="text" id="additional-attributes-input" class="form-control"
-                            placeholder="e.g. attr1, attr2, customKey">
+                        <input type="text" id="additional-attributes-input" class="material-input"
+                            placeholder="e.g. attr1, attr2, customKey"
+                            style="background: #ffffff !important; padding: 8px; border: 1px solid #e0e0e0; border-radius: 4px; color: #264554 !important;">
                     </div>
                 </div>
 
@@ -856,11 +866,17 @@
                 </table>
             </div>
         </section>
+    </div> <!-- End workbench-view -->
+
+    <!-- History View -->
+    <div id="history-view" class="hidden">
+        <div id="execution-history-root"></div>
     </div>
 
     <script src="System/address_utils.js"></script>
     <script src="components/login_component.js"></script>
     <script src="components/executor_v2.js"></script>
+    <script src="components/execution_history.js"></script>
     <script src="script.js"></script>
 </body>
 

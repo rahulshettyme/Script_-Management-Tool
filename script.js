@@ -25,11 +25,18 @@ let loginComponent = null;
 // IFRAME MESSAGE LISTENER (userRoleType)
 // =============================================
 let userRoleType = null;
+let userName = null; // Captured from iframe message (prod) or local_user in secrets (local)
+let loginUser = null; // Captured from login component (actual username used for authentication)
 
 window.addEventListener('message', (event) => {
     if (event && event.data && event.data.userRoleType) {
         userRoleType = event.data.userRoleType;
         applyRoleBasedDropdown(userRoleType);
+        if (historyManager) historyManager.userRole = userRoleType;
+    }
+    if (event && event.data && event.data.userName) {
+        userName = event.data.userName;
+        console.log(`[Audit] userName set from iframe: ${userName}`);
     }
 });
 
@@ -60,6 +67,22 @@ async function loadEnvUrls() {
         const data = await res.json();
         ENVIRONMENT_API_URLS = data.environment_api_urls || {};
         ENVIRONMENT_URLS = data.environment_urls || {};
+        
+        // Local Testing Role & User Support
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        if (isLocal) {
+            if (data.local_role) {
+                console.log(`[LocalTest] Applying local_role: ${data.local_role}`);
+                userRoleType = data.local_role;
+                applyRoleBasedDropdown(userRoleType);
+                if (historyManager) historyManager.userRole = userRoleType;
+            }
+            if (data.local_user && !userName) {
+                userName = data.local_user;
+                console.log(`[LocalTest] userName set from secrets: ${userName}`);
+            }
+        }
+
         console.log('Loaded Environment URLs:', Object.keys(ENVIRONMENT_API_URLS));
     } catch (e) {
         console.error('Failed to load env URLs:', e);
@@ -246,8 +269,8 @@ const elements = {
 
     // Additional Attributes
     additionalAttributesSection: document.getElementById('additional-attributes-section'),
+    enableAdditionalAttributes: document.getElementById('enable-additional-attributes'),
     additionalAttributesInputContainer: document.getElementById('additional-attributes-input-container'),
-    startRowInput: document.getElementById('start-row-input'),
     additionalAttributesInput: document.getElementById('additional-attributes-input'),
     gdprSection: document.getElementById('gdpr-section'),
     isGdprTenant: document.getElementById('is-gdpr-tenant'),
@@ -1331,12 +1354,138 @@ function completeExecution() {
     elements.downloadResultsBtn.classList.remove('hidden');
 
     console.log(`Execution completed in ${formatDuration(totalTime)}`);
+
+    // ---- AUDIT TRAIL HOOK ----
+    // Fire-and-forget: record execution in audit trail (does not block UI)
+    _recordAuditEntry(totalTime).catch(e => console.warn('[Audit] Recording failed (non-critical):', e));
+}
+
+/**
+ * Collects execution metadata and sends it to the audit trail backend.
+ * Called automatically at the end of every execution.
+ * Sends input file (from upload) and output file (XLSX blob).
+ */
+async function _recordAuditEntry(totalTimeMs) {
+    try {
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const team = elements.dataNeededForSelect ? elements.dataNeededForSelect.value : '';
+        const passCount = parseInt(elements.passCount?.textContent || '0', 10);
+        const failCount = parseInt(elements.failCount?.textContent || '0', 10);
+
+        // --- Input File ---
+        let inputFileName = null;
+        let inputFileBase64 = null;
+        const fileInput = elements.fileUpload;
+        if (fileInput && fileInput.files && fileInput.files[0]) {
+            const file = fileInput.files[0];
+            inputFileName = file.name;
+            inputFileBase64 = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = e => resolve(e.target.result.split(',')[1]); // strip data:...;base64,
+                reader.onerror = () => resolve(null);
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // --- Output File (generate XLSX blob) ---
+        let outputFileName = null;
+        let outputFileBase64 = null;
+        if (executionResults && executionResults.length > 0 && typeof XLSX !== 'undefined') {
+            try {
+                const exportData = executionResults.map(r => { const f = { ...r }; delete f.row; return f; });
+                const ws = XLSX.utils.json_to_sheet(exportData);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Results');
+                const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'base64' });
+                outputFileName = `Results_${selectedDataType}.xlsx`;
+                outputFileBase64 = wbout;
+            } catch (xlsErr) {
+                console.warn('[Audit] Could not generate output file blob:', xlsErr);
+            }
+        }
+
+        const payload = {
+            isLocal,
+            user: userName || 'Unknown',
+            team,
+            tenant: currentTenant || '—',
+            loginUser: loginUser || '—',
+            script: selectedDataType || '',
+            dateTime: new Date(executionStartTime).toISOString(),
+            executionTime: formatDuration(totalTimeMs),
+            passCount,
+            failCount,
+            inputFileName,
+            inputFileBase64,
+            outputFileName,
+            outputFileBase64
+        };
+
+        await fetch('/api/audit/record', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        console.log('[Audit] Execution recorded successfully.');
+    } catch (e) {
+        console.warn('[Audit] _recordAuditEntry error:', e);
+    }
 }
 
 // Sleep utility
 function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
+
+// =============================================
+// HISTORY TOGGLE LOGIC
+// =============================================
+
+let historyManager = null;
+
+function initHistory() {
+    const btn = document.getElementById('toggle-history-btn');
+    const workbenchView = document.getElementById('workbench-view');
+    const historyView = document.getElementById('history-view');
+    const icon = document.getElementById('toggle-history-icon');
+    const text = document.getElementById('toggle-history-text');
+
+    if (!btn || !workbenchView || !historyView) return;
+
+    btn.addEventListener('click', () => {
+        const isShowingHistory = !historyView.classList.contains('hidden');
+
+        if (isShowingHistory) {
+            // Show Workbench
+            historyView.classList.add('hidden');
+            workbenchView.classList.remove('hidden');
+            icon.textContent = '📜';
+            text.textContent = 'Execution History';
+        } else {
+            // Show History
+            workbenchView.classList.add('hidden');
+            historyView.classList.remove('hidden');
+            icon.textContent = '🏠';
+            text.textContent = 'Back to Workbench';
+
+            // Initialize or Refresh History
+            if (!historyManager) {
+                historyManager = new ExecutionHistoryManager('execution-history-root', {
+                    userRole: userRoleType
+                });
+            } else {
+                historyManager.userRole = userRoleType;
+                historyManager._loadRecords().then(() => {
+                    historyManager._applyFilters();
+                    historyManager._renderTable();
+                });
+            }
+        }
+    });
+}
+
+// Initialize on load
+document.addEventListener('DOMContentLoaded', initHistory);
 
 // =============================================
 // IMPORT CUSTOM SCRIPT HANDLING
@@ -1618,6 +1767,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 authToken = token;
                 currentEnvironment = userDetails.environment;
                 currentTenant = userDetails.tenant;
+                loginUser = userDetails.username;
 
                 // Update Session UI
                 if (elements.loginFormContainer) elements.loginFormContainer.classList.add('hidden');
@@ -1642,6 +1792,19 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     } else {
         console.error('LoginComponent class not found. Ensure login_component.js is loaded.');
+    }
+
+    // Additional Attributes Toggle
+    if (elements.enableAdditionalAttributes) {
+        elements.enableAdditionalAttributes.addEventListener('change', (e) => {
+            if (elements.additionalAttributesInputContainer) {
+                if (e.target.checked) {
+                    elements.additionalAttributesInputContainer.classList.remove('hidden');
+                } else {
+                    elements.additionalAttributesInputContainer.classList.add('hidden');
+                }
+            }
+        });
     }
 
     // Logout Hook
@@ -1852,11 +2015,12 @@ if (elements.executeBtn) {
                                 processed += chunk.length;
                                 
                                 updateProgress(processed, total, pass, fail);
+                                renderExecutionResults(); // Render immediately as each batch completes (real-time table update)
                                 return chunkResults;
                             });
                             
                             await Promise.all(promises);
-                            renderExecutionResults();
+                            renderExecutionResults(); // Safety final render to ensure no results are missed
                             await new Promise(r => setTimeout(r, 100)); // Brief breath
                         }
                     } else {

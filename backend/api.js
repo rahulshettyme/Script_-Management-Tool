@@ -1,8 +1,45 @@
 const https = require('https');
 const fs = require('fs');
+const http = require('http');
 const path = require('path');
 const multer = require('multer');
 const { spawn } = require('child_process');
+const { Storage } = require('@google-cloud/storage');
+
+// Initialize API Key from DB or Environment
+const SECRETS_FILE = path.join(__dirname, '..', 'System', 'secrets.json');
+
+// Helper to read Secrets
+const readSecrets = () => {
+    try {
+        if (fs.existsSync(SECRETS_FILE)) {
+            const data = fs.readFileSync(SECRETS_FILE, 'utf8');
+            return JSON.parse(data);
+        }
+    } catch (err) {
+        console.error('Error reading secrets:', err);
+    }
+    return {};
+};
+
+// Initialize GCS Client
+// Strategy: Use GCS_KEY_PATH from secrets.json if available, otherwise fall back to ADC
+const initGCS = () => {
+    try {
+        const secrets = readSecrets();
+        const keyPath = process.env.GCS_KEY_PATH || secrets.GCS_KEY_PATH;
+
+        if (keyPath && fs.existsSync(keyPath)) {
+            console.info(`[Audit] Initializing GCS with local key file: ${keyPath}`);
+            return new Storage({ keyFilename: keyPath });
+        }
+    } catch (e) {
+        console.warn('[Audit] GCS Local Key check failed, falling back to ADC:', e.message);
+    }
+    return new Storage(); // Standard ADC (Metadata Server or Local Auth)
+};
+
+const gcs = initGCS();
 
 const QA_TOKEN_BASE = "https://v2sso-gcp.cropin.co.in/auth/realms/";
 const PROD_TOKEN_BASE = "https://sso.sg.cropin.in/auth/realms/";
@@ -21,21 +58,6 @@ const readDb = () => {
     }
 };
 
-// Initialize API Key from DB or Environment
-const SECRETS_FILE = path.join(__dirname, '..', 'System', 'secrets.json');
-
-// Helper to read Secrets
-const readSecrets = () => {
-    try {
-        if (fs.existsSync(SECRETS_FILE)) {
-            const data = fs.readFileSync(SECRETS_FILE, 'utf8');
-            return JSON.parse(data);
-        }
-    } catch (err) {
-        console.error('Error reading secrets:', err);
-    }
-    return {};
-};
 
 // Helper to resolve API Keys dynamically (Environment > Secrets File > DB File)
 const getGoogleApiKey = () => {
@@ -703,9 +725,12 @@ module.exports = function (app) {
     // 2. GET ENVIRONMENT CONFIG
     app.get('/api/env-urls', (req, res) => {
         const db = readDb();
+        const secrets = readSecrets();
         res.json({
             environment_api_urls: db.environment_api_urls || {},
-            environment_urls: db.environment_urls || {}
+            environment_urls: db.environment_urls || {},
+            local_role: secrets.local_role || null,
+            local_user: secrets.local_user || null  // Used as userName in local testing
         });
     });
 
@@ -1661,9 +1686,9 @@ module.exports = function (app) {
                 try {
                     let registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
                     // Robust Lookup: Find by filename, current display name, or old clean name
-                    const entryIndex = registry.findIndex(r => 
-                        r.filename === oldPyName || 
-                        r.name === oldName || 
+                    const entryIndex = registry.findIndex(r =>
+                        r.filename === oldPyName ||
+                        r.name === oldName ||
                         r.name === cleanOld ||
                         r.name === oldPyName
                     );
@@ -1829,8 +1854,8 @@ module.exports = function (app) {
 
             // Upsert Logic: Find existing to preserve other fields if needed, or merge new
             // Upsert Logic: Check both name and filename to prevent duplicates
-            const existingIndex = registry.findIndex(r => 
-                r.name === cleanDisplayName || 
+            const existingIndex = registry.findIndex(r =>
+                r.name === cleanDisplayName ||
                 r.filename === pyFilename ||
                 r.name === pyFilename
             );
@@ -1931,7 +1956,7 @@ module.exports = function (app) {
         if (!filename) return res.status(400).json({ error: 'Filename required' });
 
         const scriptsDir = path.join(__dirname, '..', 'Converted Scripts');
-        
+
         // Robust filename resolution
         const cleanName = filename.replace('.py', '').trim();
         const sanitizedName = cleanName.replace(/ /g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
@@ -2218,7 +2243,7 @@ module.exports = function (app) {
         if (!filename) return res.status(400).json({ error: "Filename required" });
 
         const draftsDir = path.join(__dirname, '..', 'Draft Scripts');
-        
+
         // Robust filename resolution
         const cleanName = filename.replace('.py', '').trim();
         const sanitizedName = cleanName.replace(/ /g, '_').replace(/[^a-zA-Z0-9_-]/g, '');
@@ -2293,5 +2318,319 @@ module.exports = function (app) {
         }
     });
 
+
+    // =============================================
+    // AUDIT TRAIL ENDPOINTS (GCS-Aware)
+    // =============================================
+
+    const AUDIT_TRAIL_VERSION = 1;
+
+    /**
+     * Fetch Service Account Email from Google Metadata Server (Cloud Run/GCP only)
+     */
+    const getServiceAccountEmail = () => {
+        return new Promise((resolve) => {
+            const options = {
+                hostname: 'metadata.google.internal',
+                path: '/computeMetadata/v1/instance/service-accounts/default/email',
+                headers: { 'Metadata-Flavor': 'Google' },
+                timeout: 1000
+            };
+            const req = http.get(options, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => resolve(data.trim() || 'Default/Unknown'));
+            });
+            req.on('error', () => resolve('Local/Manual Credentials'));
+            req.end();
+        });
+    };
+
+    /**
+     * Resolve the audit storage config.
+     * Detects if path is local or GCS bucket (gs://)
+     */
+    const getAuditConfig = () => {
+        const secrets = readSecrets();
+        const rawPath = process.env.AUDIT_STORAGE_PATH || secrets.AUDIT_STORAGE_PATH || null;
+
+        if (rawPath && rawPath.startsWith('gs://')) {
+            const parts = rawPath.replace('gs://', '').split('/');
+            const bucketName = parts.shift();
+            const prefix = parts.join('/');
+            return { type: 'gcs', bucketName, prefix, rawPath };
+        }
+        return { type: 'local', path: rawPath, rawPath };
+    };
+
+    /**
+     * Resolve audit index filename.
+     */
+    const getAuditIndexFilename = (isLocal) => {
+        return isLocal ? 'audittrail_local.json' : 'audittrail.json';
+    };
+
+    /**
+     * Read the audit trail (Supports GCS and Local)
+     */
+    const readAuditTrail = async (isLocal) => {
+        const config = getAuditConfig();
+        const filename = getAuditIndexFilename(isLocal);
+
+        try {
+            if (config.type === 'gcs' && !isLocal) {
+                // Read from GCS Bucket
+                const bucket = gcs.bucket(config.bucketName);
+                const file = bucket.file(path.join(config.prefix, 'System', filename).replace(/\\/g, '/'));
+
+                console.info(`[Audit] Fetching history index: gs://${config.bucketName}/${file.name}`);
+                const [exists] = await file.exists();
+                if (exists) {
+                    const [content] = await file.download();
+                    const parsed = JSON.parse(content.toString());
+                    if (parsed && Array.isArray(parsed.records)) {
+                        console.info(`[Audit] History loaded: ${parsed.records.length} records found.`);
+                        return parsed;
+                    }
+                } else {
+                    console.info(`[Audit] History index not found at target GCS path. Initializing new.`);
+                }
+            } else {
+                // Local Fallback
+                const filePath = path.join(__dirname, '..', 'System', filename);
+                if (fs.existsSync(filePath)) {
+                    const raw = fs.readFileSync(filePath, 'utf8');
+                    const parsed = JSON.parse(raw);
+                    if (parsed && Array.isArray(parsed.records)) return parsed;
+                }
+            }
+        } catch (e) {
+            console.error('[Audit] Failed to read audit trail:', e);
+        }
+        return { version: AUDIT_TRAIL_VERSION, records: [] };
+    };
+
+    /**
+     * Write audit trail (Supports GCS and Local)
+     */
+    const writeAuditTrail = async (isLocal, data) => {
+        const config = getAuditConfig();
+        const filename = getAuditIndexFilename(isLocal);
+
+        try {
+            if (config.type === 'gcs' && !isLocal) {
+                const bucket = gcs.bucket(config.bucketName);
+                const file = bucket.file(path.join(config.prefix, 'System', filename).replace(/\\/g, '/'));
+                console.info(`[Audit] Persisting history index to GCS: gs://${config.bucketName}/${file.name}`);
+                await file.save(JSON.stringify(data, null, 2), {
+                    contentType: 'application/json',
+                    resumable: false
+                });
+            } else {
+                const filePath = path.join(__dirname, '..', 'System', filename);
+                fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+            }
+        } catch (e) {
+            console.error('[Audit] Failed to write audit trail:', e);
+        }
+    };
+
+    /**
+     * Save a file to Audit Storage (Supports GCS and Local)
+     */
+    const saveAuditFile = async (team, type, filename, base64Data) => {
+        const config = getAuditConfig();
+        if (!config.rawPath) {
+            console.warn('[Audit] AUDIT_STORAGE_PATH not configured. Skipping file save.');
+            return null;
+        }
+
+        const teamFolder = team === 'cs_team' ? 'CS_Team' : 'QA_Team';
+        const typeFolder = type === 'input' ? 'Inputs' : 'Outputs';
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+        const ext = path.extname(filename);
+        const nameOnly = path.basename(filename, ext).replace(/[^a-zA-Z0-9._\-]/g, '_');
+        const safeFilename = `${nameOnly}_${timestamp}${ext}`;
+
+        try {
+            const buffer = Buffer.from(base64Data, 'base64');
+
+            if (config.type === 'gcs') {
+                // Cloud Storage Upload
+                const bucket = gcs.bucket(config.bucketName);
+                const blobPath = path.join(config.prefix, teamFolder, typeFolder, safeFilename).replace(/\\/g, '/');
+                const file = bucket.file(blobPath);
+
+                console.info(`[Audit] Uploading ${type} file: gs://${config.bucketName}/${blobPath}`);
+                await file.save(buffer, {
+                    contentType: (ext === '.xlsx') ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/octet-stream',
+                    resumable: false
+                });
+
+                console.info(`[Audit] Successfully uploaded: gs://${config.bucketName}/${blobPath}`);
+                return `gs://${config.bucketName}/${blobPath}`;
+            } else {
+                // Local Filesystem
+                const dirPath = path.join(config.path, teamFolder, typeFolder);
+                fs.mkdirSync(dirPath, { recursive: true });
+                const fullPath = path.join(dirPath, safeFilename);
+                fs.writeFileSync(fullPath, buffer);
+                console.info(`[Audit] Saved local file: ${fullPath}`);
+                return fullPath;
+            }
+        } catch (e) {
+            console.error(`[Audit] Failed to save ${type} file:`, e);
+            return null;
+        }
+    };
+
+    // POST /api/audit/record — Record a completed execution
+    app.post('/api/audit/record', async (req, res) => {
+        try {
+            const {
+                user, team, tenant, loginUser, script, dateTime, executionTime,
+                passCount, failCount,
+                inputFileName, inputFileBase64,
+                outputFileName, outputFileBase64,
+                isLocal
+            } = req.body;
+
+            const trail = await readAuditTrail(!!isLocal);
+
+            // Save files (Now Async)
+            const inputFilePath = (inputFileName && inputFileBase64)
+                ? await saveAuditFile(team, 'input', inputFileName, inputFileBase64)
+                : null;
+
+            const outputFilePath = (outputFileName && outputFileBase64)
+                ? await saveAuditFile(team, 'output', outputFileName, outputFileBase64)
+                : null;
+
+            const record = {
+                id: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+                user: user || 'Unknown',
+                team: team || '',
+                tenant: tenant || '—',
+                loginUser: loginUser || '—',
+                script: script || '',
+                dateTime: dateTime || new Date().toISOString(),
+                executionTime: executionTime || '',
+                passCount: passCount ?? 0,
+                failCount: failCount ?? 0,
+                inputFile: inputFilePath,
+                outputFile: outputFilePath,
+                originalInputFile: inputFileName || '',
+                originalOutputFile: outputFileName || ''
+            };
+
+            trail.records.push(record);
+            await writeAuditTrail(!!isLocal, trail);
+
+            console.log(`[Audit] Recorded execution by ${record.user} for ${record.script}`);
+            res.json({ success: true, id: record.id });
+        } catch (e) {
+            console.error('[Audit] POST /api/audit/record error:', e);
+            res.status(500).json({ error: 'Failed to record audit entry' });
+        }
+    });
+
+    // GET /api/audit/history — Fetch records with role-based filtering
+    app.get('/api/audit/history', async (req, res) => {
+        try {
+            const role = req.query.role || '';
+            const isLocal = req.query.isLocal === 'true';
+            const trail = await readAuditTrail(isLocal);
+
+            let records = trail.records || [];
+            if (role === 'meta-csm') {
+                records = records.filter(r => r.team === 'cs_team');
+            }
+            records = [...records].sort((a, b) => new Date(b.dateTime) - new Date(a.dateTime));
+
+            res.json({ version: trail.version, records });
+        } catch (e) {
+            console.error('[Audit] GET /api/audit/history error:', e);
+            res.status(500).json({ error: 'Failed to read audit history' });
+        }
+    });
+
+    // GET /api/audit/file — Proxy download of a stored audit file (GCS Support)
+    app.get('/api/audit/file', async (req, res) => {
+        try {
+            const filePath = req.query.path;
+            if (!filePath) return res.status(400).json({ error: 'Missing path parameter' });
+
+            if (filePath.startsWith('gs://')) {
+                // Stream from GCS
+                const uri = filePath.replace('gs://', '').split('/');
+                const bucketName = uri.shift();
+                const blobPath = uri.join('/');
+
+                const bucket = gcs.bucket(bucketName);
+                const file = bucket.file(blobPath);
+
+                const [exists] = await file.exists();
+                if (!exists) return res.status(404).json({ error: 'Blob not found' });
+
+                const filename = path.basename(blobPath);
+                res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+                // Stream directly to response
+                file.createReadStream()
+                    .on('error', err => {
+                        console.error('[Audit] GCS Stream Error:', err);
+                        res.status(500).end();
+                    })
+                    .pipe(res);
+            } else {
+                // Security: ensure local path is within configured storage root
+                const config = getAuditConfig();
+                if (config.type === 'local' && config.path) {
+                    const resolvedPath = path.resolve(filePath);
+                    const resolvedStorage = path.resolve(config.path);
+                    if (!resolvedPath.startsWith(resolvedStorage)) {
+                        return res.status(403).json({ error: 'Access denied' });
+                    }
+                }
+
+                if (!fs.existsSync(filePath)) {
+                    return res.status(404).json({ error: 'File not found' });
+                }
+
+                const filename = path.basename(filePath);
+                res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+                res.sendFile(path.resolve(filePath));
+            }
+        } catch (e) {
+            console.error('[Audit] GET /api/audit/file error:', e);
+            res.status(500).json({ error: 'Failed to serve file' });
+        }
+    });
+
     // Startup Log
+    (async () => {
+        try {
+            const startupConfig = getAuditConfig(); // Get config first
+
+            // Print config logs immediately (Synchronous)
+            if (startupConfig.rawPath) {
+                console.info("====================================================");
+                console.info(`[Audit] STORAGE MODE: ${startupConfig.type.toUpperCase()}`);
+                console.info(`[Audit] TARGET PATH: ${startupConfig.rawPath}`);
+                if (startupConfig.type === 'gcs') {
+                    console.info(`[Audit] BUCKET: ${startupConfig.bucketName}`);
+                }
+            } else {
+                console.warn('[Audit] Configuration Warning: AUDIT_STORAGE_PATH not configured.');
+            }
+
+            // Now try the async part
+            const saEmail = await getServiceAccountEmail();
+            console.info("[Audit] SERVICE ACCOUNT IDENTITY:", saEmail);
+            console.info("====================================================");
+
+        } catch (err) {
+            console.error("[Audit] Startup Log Failure:", err.message);
+        }
+    })();
 };

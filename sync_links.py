@@ -1,20 +1,19 @@
 import os
 import subprocess
 import shutil
+import argparse
 import time
 
 # --- CONFIGURATION ---
 SRC_BASE = r'C:\Users\cropin\Documents\Important\AntiGravity\Data Generate'
 DST_BASE = r'C:\Users\cropin\Documents\Important\AntiGravity\Cropin Cloud Github\QA-Ops_Workbench'
 
-# Folders to sync via Junctions (Auto-Sync)
+# Folders to sync (Whole directories)
 FOLDERS = ['backend', 'System', 'Converted Scripts', 'components']
 
-# Specific Manager files (avoiding generation tools)
-MANAGER_FILES = ['runner_bridge.py']
-
-# Root files to sync via Hardlinks (Bidirectional but fragile)
+# Individual files to sync (Root only)
 FILES = [
+    os.path.join('Manager', 'runner_bridge.py'),
     'createbulkdata.html', 
     'script.js', 
     'style.css', 
@@ -23,95 +22,89 @@ FILES = [
     'logo.png'
 ]
 
-def is_hardlink(file1, file2):
-    """Check if two paths point to the same physical file."""
-    try:
-        if not os.path.exists(file1) or not os.path.exists(file2):
-            return False
-        return os.path.samefile(file1, file2)
-    except OSError:
-        return False
-
-def handle_file_sync(src, dst):
-    """Detect repairs, sync back if needed, and re-link."""
-    if not os.path.exists(src):
-        print(f"[ERROR] Source missing: {src}")
+def kill_link(path):
+    """Safely remove a junction or hardlink without deleting source data."""
+    if not os.path.exists(path):
         return
-
-    # 1. If destination doesn't exist, just link it
-    if not os.path.exists(dst):
-        print(f"[LINK] Creating new hardlink: {os.path.basename(dst)}")
-        subprocess.run(f'mklink /h "{dst}" "{src}"', shell=True, check=True)
-        return
-
-    # 2. Check if already linked
-    if is_hardlink(src, dst):
-        return
-
-    # 3. LINK BROKEN - Detected regular file in Production
-    print(f"[REPAIR] Broken link detected for {os.path.basename(dst)}")
     
-    src_mtime = os.path.getmtime(src)
-    dst_mtime = os.path.getmtime(dst)
-
-    # Smart Sync: If Production is newer (Git Pull / Merge), pull it to Local
-    if dst_mtime > src_mtime + 2: # 2s buffer for filesystem precision
-        print(f"  [SYNC-BACK] Production file is NEWER. Copying to local...")
-        shutil.copy2(dst, src)
+    print(f"[CLEANUP] Removing existing path/link: {path}")
+    if os.path.isdir(path):
+        # Use rmdir to break junctions without touching source
+        subprocess.run(f'rmdir "{path}"', shell=True)
+        # If it was a real folder, rmdir might fail if not empty, so fallback to rmtree
+        if os.path.exists(path):
+            shutil.rmtree(path, ignore_errors=True)
     else:
-        print(f"  [SYNC-FORWARD] Local file is NEWER or equal. Re-linking...")
+        try:
+            os.remove(path)
+        except:
+            pass
 
-    # 4. Re-establish Link
-    try:
-        os.remove(dst)
-        subprocess.run(f'mklink /h "{dst}" "{src}"', shell=True, check=True)
-    except Exception as e:
-        print(f"  [ERROR] Failed to link {os.path.basename(dst)}: {e}")
-
-def handle_folder_sync(src, dst):
-    """Ensure directory junctions are intact."""
-    if not os.path.exists(src):
-        os.makedirs(src, exist_ok=True)
-
-    if os.path.exists(dst):
-        # Junctions are usually stable unless manually deleted
+def sync_folder(src, dst, reverse=False):
+    """Use Robocopy for robust, fast directory mirroring."""
+    s, d = (dst, src) if reverse else (src, dst)
+    
+    if not os.path.exists(s):
+        print(f"[SKIP] Source folder missing: {s}")
         return
 
-    print(f"[LINK] Creating directory junction: {os.path.basename(dst)}")
-    subprocess.run(f'mklink /j "{dst}" "{src}"', shell=True, check=True)
+    print(f"[SYNC] {'<--' if reverse else '-->'} Folder: {os.path.basename(s)}")
+    
+    # Robocopy /MIR : Mirror a directory tree
+    # /XF : Exclude files (logs, secrets, audit trails, etc)
+    # /XD : Exclude directories
+    cmd = f'robocopy "{s}" "{d}" /MIR /XF *.log *.txt *.bak secrets.json audittrail.json audittrail_local.json /XD __pycache__ .git .vscode /NJH /NJS /NDL /NC /NS /NP'
+    subprocess.run(cmd, shell=True)
+
+def sync_file(src, dst, reverse=False):
+    """Standard file copy."""
+    s, d = (dst, src) if reverse else (src, dst)
+    
+    if not os.path.exists(s):
+        print(f"[SKIP] Source file missing: {s}")
+        return
+
+    print(f"[COPY] {'<--' if reverse else '-->'} File: {os.path.basename(s)}")
+    os.makedirs(os.path.dirname(d), exist_ok=True)
+    shutil.copy2(s, d)
 
 def main():
+    parser = argparse.ArgumentParser(description="Safe One-Way Sync for QA-Ops Workbench")
+    parser.add_argument("--back", action="store_true", help="Sync BACK from Deployment to Local (Pull)")
+    args = parser.parse_args()
+
+    mode = "BACKWARD (PULL)" if args.back else "FORWARD (PUSH)"
     print("====================================================")
-    print("STARTING: QA-Ops Workbench - Self-Repairing Sync System")
+    print(f"SAFE SYNC SYSTEM - MODE: {mode}")
     print(f"Time: {time.strftime('%Y-%m-%d %H:%M:%S')}")
     print("====================================================\n")
 
-    # 1. Folders (Junctions)
-    print("--- Checking Folders (Junctions) ---")
+    # 1. Cleanup Phase (Only on Forward Push to ensure links are broken)
+    if not args.back:
+        print("--- Checking for Dangerous Links & Secrets ---")
+        for f in FOLDERS:
+            kill_link(os.path.join(DST_BASE, f))
+        for f in FILES:
+            kill_link(os.path.join(DST_BASE, f))
+        
+        # Explicitly ensure no secrets.json exists in deployment
+        potential_secret = os.path.join(DST_BASE, 'System', 'secrets.json')
+        if os.path.exists(potential_secret):
+            print(f"[SECURITY] Deleting secrets.json from deployment: {potential_secret}")
+            os.remove(potential_secret)
+            
+        print("--- Cleanup Complete ---\n")
+
+    # 2. Sync Folders
     for f in FOLDERS:
-        src = os.path.join(SRC_BASE, f)
-        dst = os.path.join(DST_BASE, f)
-        handle_folder_sync(src, dst)
+        sync_folder(os.path.join(SRC_BASE, f), os.path.join(DST_BASE, f), reverse=args.back)
 
-    # 2. Manager Sub-files
-    print("\n--- Checking Manager (Individual Files) ---")
-    src_mgr = os.path.join(SRC_BASE, "Manager")
-    dst_mgr = os.path.join(DST_BASE, "Manager")
-    os.makedirs(dst_mgr, exist_ok=True)
-    for f in MANAGER_FILES:
-        src = os.path.join(src_mgr, f)
-        dst = os.path.join(dst_mgr, f)
-        handle_file_sync(src, dst)
-
-    # 3. Root Files (Hardlinks)
-    print("\n--- Checking Root Files (Hardlinks) ---")
+    # 3. Sync Files
     for f in FILES:
-        src = os.path.join(SRC_BASE, f)
-        dst = os.path.join(DST_BASE, f)
-        handle_file_sync(src, dst)
+        sync_file(os.path.join(SRC_BASE, f), os.path.join(DST_BASE, f), reverse=args.back)
 
     print("\n====================================================")
-    print("FINISHED: Sync System Check Complete.")
+    print(f"FINISHED: {mode} Complete.")
     print("====================================================")
 
 if __name__ == "__main__":

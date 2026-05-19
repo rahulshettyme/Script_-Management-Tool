@@ -73,6 +73,9 @@ System/agent_feedback.json
 System/debug_*
 System/verify_*
 System/test_*
+# Audit trail files — never commit; each environment maintains its own
+System/audittrail.json
+System/audittrail_local.json
 
 # --- OTHER ---
 .cache_master_data/
@@ -81,3 +84,9 @@ System/secrets.json
 backup/
 *.zip
 auto_sync.bat
+
+# --- HISTORY FILES (TEST DATA) ---
+History files/QA_Ops_Audit/CS_Team/Inputs/*
+History files/QA_Ops_Audit/CS_Team/Outputs/*
+History files/QA_Ops_Audit/QA_Team/Inputs/*
+History files/QA_Ops_Audit/QA_Team/Outputs/*
