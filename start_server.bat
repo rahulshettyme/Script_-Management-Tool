@@ -1,6 +1,6 @@
 @echo off
 echo Starting Data Generate Server...
-cd /d "C:\Users\cropin\Documents\Important\AntiGravity\Data Generate"
+cd /d "C:\Users\rahul.shetty\Documents\Important\AntiGravity\Data Generate"
 
 
 

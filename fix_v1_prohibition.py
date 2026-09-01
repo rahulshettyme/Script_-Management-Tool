@@ -1,7 +1,7 @@
 import re
 
 # Read the file
-with open(r'c:\Users\cropin\Documents\Important\AntiGravity\Data Generate\Manager\script_generator.py', 'r', encoding='utf-8') as f:
+with open(r'C:\Users\rahul.shetty\Documents\Important\AntiGravity\Data Generate\Manager\script_generator.py', 'r', encoding='utf-8') as f:
     content = f.read()
 
 # Find the line with "CRITICAL: Use V2, NOT geofence_utils" and add a stronger prohibition
@@ -12,7 +12,7 @@ new_line = '''prompt += "\\nimport components.geofence_utils_v2 as geofence_util
 content = content.replace(old_line, new_line)
 
 # Write back
-with open(r'c:\Users\cropin\Documents\Important\AntiGravity\Data Generate\Manager\script_generator.py', 'w', encoding='utf-8') as f:
+with open(r'C:\Users\rahul.shetty\Documents\Important\AntiGravity\Data Generate\Manager\script_generator.py', 'w', encoding='utf-8') as f:
     f.write(content)
 
 print("Added explicit prohibition against geofence_utils V1")

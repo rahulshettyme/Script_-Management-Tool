@@ -1,8 +1,8 @@
 import subprocess
 import os
 
-src_base = r'C:\Users\cropin\Documents\Important\AntiGravity\Data Generate'
-dst_base = r'C:\Users\cropin\Documents\Important\AntiGravity\Cropin Cloud Github\QA-Ops_Workbench'
+src_base = r'C:\Users\rahul.shetty\Documents\Important\AntiGravity\Data Generate'
+dst_base = r'C:\Users\rahul.shetty\Documents\Important\AntiGravity\Cropin Cloud Github\QA-Ops_Workbench'
 
 folders = ['backend', 'System', 'Converted Scripts', 'components', 'Manager']
 files = [

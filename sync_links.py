@@ -5,8 +5,8 @@ import argparse
 import time
 
 # --- CONFIGURATION ---
-SRC_BASE = r'C:\Users\cropin\Documents\Important\AntiGravity\Data Generate'
-DST_BASE = r'C:\Users\cropin\Documents\Important\AntiGravity\Cropin Cloud Github\QA-Ops_Workbench'
+SRC_BASE = r'C:\Users\rahul.shetty\Documents\Important\AntiGravity\Data Generate'
+DST_BASE = r'C:\Users\rahul.shetty\Documents\Important\AntiGravity\Cropin Cloud Github\QA-Ops_Workbench'
 
 # Folders to sync (Whole directories)
 FOLDERS = ['backend', 'System', 'Converted Scripts', 'components']

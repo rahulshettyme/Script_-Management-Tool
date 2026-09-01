@@ -1,7 +1,7 @@
 import re
 
 # Read the file
-with open(r'c:\Users\cropin\Documents\Important\AntiGravity\Data Generate\Manager\script_generator.py', 'r', encoding='utf-8') as f:
+with open(r'C:\Users\rahul.shetty\Documents\Important\AntiGravity\Data Generate\Manager\script_generator.py', 'r', encoding='utf-8') as f:
     content = f.read()
 
 # Replace the geofence import line
@@ -22,7 +22,7 @@ content = content.replace(
 )
 
 # Write back
-with open(r'c:\Users\cropin\Documents\Important\AntiGravity\Data Generate\Manager\script_generator.py', 'w', encoding='utf-8') as f:
+with open(r'C:\Users\rahul.shetty\Documents\Important\AntiGravity\Data Generate\Manager\script_generator.py', 'w', encoding='utf-8') as f:
     f.write(content)
 
 print("Fixed geofence_utils_v2 import syntax")

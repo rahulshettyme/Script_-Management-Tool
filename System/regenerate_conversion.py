@@ -3,11 +3,11 @@ import sys
 import os
 
 # Setup path to import Manager modules
-sys.path.append(r"c:\Users\cropin\Documents\Important\AntiGravity\Data Generate\Manager")
+sys.path.append(r"C:\Users\rahul.shetty\Documents\Important\AntiGravity\Data Generate\Manager")
 import script_converter
 
-draft_path = r"c:\Users\cropin\Documents\Important\AntiGravity\Data Generate\Draft Scripts\PR_Disable.py"
-converted_path = r"c:\Users\cropin\Documents\Important\AntiGravity\Data Generate\Converted Scripts\PR_Disable.py"
+draft_path = r"C:\Users\rahul.shetty\Documents\Important\AntiGravity\Data Generate\Draft Scripts\PR_Disable.py"
+converted_path = r"C:\Users\rahul.shetty\Documents\Important\AntiGravity\Data Generate\Converted Scripts\PR_Disable.py"
 
 print(f"Reading draft from {draft_path}...")
 with open(draft_path, 'r', encoding='utf-8') as f:
