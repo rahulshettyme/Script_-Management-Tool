@@ -60,12 +60,11 @@ def _get_applicable_models(api_key):
     # Priority sorting
     def priority(name):
         n = name.lower()
-        if 'gemini-3' in n: return 0  # Priority to newer models if available
-        if '2.0-flash' in n: return 1
-        if '1.5-pro' in n: return 2
-        if '1.5-flash' in n: return 3
-        if 'pro' in n: return 4
-        if 'flash' in n: return 5
+        if '2.0-flash' in n: return 0
+        if '1.5-pro' in n: return 1
+        if '1.5-flash' in n: return 2
+        if 'pro' in n: return 3
+        if 'flash' in n: return 4
         return 10
 
     models.sort(key=priority)

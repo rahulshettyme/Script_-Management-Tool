@@ -8,6 +8,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="components/login_component.css">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="components/results_filter.css">
     <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
     <style>
         .split-container {
@@ -282,16 +283,23 @@
                             </label>
 
                             <div id="threadSizeContainer" style="display: flex; align-items: center; gap: 0.5rem; opacity: 0.3; pointer-events: none;">
-                                <label style="color: #64748b; font-size: 0.85rem;">Batch Size:</label>
+                                <label id="threadSizeLabel" style="color: #64748b; font-size: 0.85rem;">Batch Size:</label>
                                 <select id="threadSize"
                                     style="background: #0f172a; color: #cbd5e1; border: 1px solid #334155; padding: 2px 8px; border-radius: 4px;">
-                                    <option value="5" selected>5</option>
+                                    <option value="1" selected>1</option>
+                                    <option value="5">5</option>
                                     <option value="10">10</option>
                                     <option value="20">20</option>
                                     <option value="25">25</option>
                                     <option value="50">50</option>
                                     <option value="100">100</option>
                                 </select>
+                                <label id="allowLargeBatchContainer" class="switch" style="display: flex; align-items: center; cursor: pointer; margin-left: 10px;">
+                                    <input type="checkbox" id="allowLargeBatch">
+                                    <span style="font-size: 0.85rem; color: #cbd5e1; margin-left: 0.5rem;">
+                                        Allow > 100
+                                    </span>
+                                </label>
                             </div>
                         </div>
                     </div>
@@ -359,10 +367,16 @@
                 <!-- Steps Definition Section (Always Visible) -->
                 <div id="descGroup">
                     <div class="form-group" style="margin-bottom: 1.5rem;">
-                        <label style="font-size: 0.9rem; color: #e2e8f0; margin-bottom: 0.5rem; display: block;">Excel
-                            Input Columns <span style="color: #64748b;">(comma separated)</span></label>
+                        <label style="font-size: 0.9rem; color: #e2e8f0; margin-bottom: 0.5rem; display: block;">User Input Columns <span style="color: #64748b;">(comma separated)</span></label>
                         <input type="text" id="globalInputColumns" placeholder="e.g. Farmer Name, Mobile, Village Code"
                             style="width: 100%; padding: 0.75rem; background: #0f172a; color: white; border: 1px solid #334155; border-radius: 6px;">
+                    </div>
+
+                    <div class="form-group" style="margin-bottom: 1.5rem;">
+                        <label style="font-size: 0.9rem; color: #e2e8f0; margin-bottom: 0.5rem; display: block;">Output Columns <span style="color: #64748b;">(comma separated)</span></label>
+                        <input type="text" id="globalOutputColumns" placeholder="e.g. Response, Status, Code"
+                            style="width: 100%; padding: 0.75rem; background: #0f172a; color: white; border: 1px solid #334155; border-radius: 6px;">
+                        <small style="color: #64748b; font-size: 0.8rem; margin-top: 4px; display: block;">Used for Output Mapping. These columns will NOT appear in the user's template download.</small>
                     </div>
 
                     <div
@@ -555,6 +569,17 @@
                     <input type="file" id="testFile" accept=".xlsx, .xls, .csv">
                 </div>
 
+                <!-- Test Batch Size Input -->
+                <div id="testBatchSizeContainer" class="form-group" style="display:none; margin-top: 1rem; padding: 1rem; background: rgba(59, 130, 246, 0.1); border: 1px solid #3b82f6; border-radius: 6px;">
+                    <label style="color: #60a5fa; font-weight: 500; font-size: 0.85rem; display: flex; align-items: center; gap: 5px;">
+                        📦 Batch Size
+                    </label>
+                    <input type="number" id="testBatchSize" value="5" min="1" max="100" style="width:100%; margin-top: 5px; background: #0f172a; border: 1px solid #3b82f6; color: white; padding: 8px; border-radius: 4px;">
+                    <small style="color: #94a3b8; font-size: 0.75rem; margin-top: 4px; display: block;" id="testBatchSizeHint">
+                        Max: 100. Mostly for batch APIs without threading.
+                    </small>
+                </div>
+
 
                 <!-- Dynamic Attributes Input -->
                 <div id="attributesContainer" class="form-group"
@@ -599,10 +624,17 @@
 
                 <div class="actions-row">
                     <button class="btn-secondary action-btn-main" onclick="runTest()">Run Debug Trace 🐞</button>
-                    <button id="downloadOutputBtn" class="btn-primary action-btn-sub" onclick="downloadTestOutput()"
-                        style="background: #0ea5e9; display:none;">Download Output 📥</button>
-                    <button class="btn-primary action-btn-sub" onclick="copyTraceLogs()"
-                        style="background: #475569;">Copy Logs 📋</button>
+                    <!-- Download Output — Smart Dropdown -->
+                    <div id="downloadOutputBtn" class="rf-download-group" style="display:none; flex: 0 0 auto;">
+                        <select id="download-output-select" onchange="handleDownloadSelect(this, 'onboarding')" class="rf-download-select onboarding">
+                            <option value="" disabled selected hidden>Output 📥 (All)</option>
+                            <option value="all">📥 All Rows</option>
+                            <option value="filtered">🔍 Current Filter View</option>
+                            <option value="fail">❌ Failed Only</option>
+                            <option value="pass">✅ Passed Only</option>
+                        </select>
+                    </div>
+                    <button class="btn-primary action-btn-sub" onclick="copyTraceLogs()" style="background: #475569;">Copy Logs 📋</button>
                 </div>
 
                 <!-- MOCK RESULT PREVIEW (New) -->
@@ -621,16 +653,14 @@
                     <!-- Mini Table -->
                     <div style="max-height: 200px; overflow-y: auto; border: 1px solid #334155; border-radius: 6px;">
                         <table class="results-table">
-                            <table class="results-table">
-                                <thead id="mockResultsHead">
-                                    <tr>
-                                        <th>Row</th>
-                                        <th>Status</th>
-                                        <!-- Dynamic Columns will be injected here -->
-                                    </tr>
-                                </thead>
-                                <tbody id="mockResultsBody"></tbody>
-                            </table>
+                            <thead id="mockResultsHead">
+                                <tr>
+                                    <th>Row</th>
+                                    <th>Status</th>
+                                    <!-- Dynamic Columns will be injected here -->
+                                </tr>
+                            </thead>
+                            <tbody id="mockResultsBody"></tbody>
                         </table>
                     </div>
                 </div>
@@ -775,6 +805,7 @@
     </div>
 
     <script src="components/login_component.js?v=4"></script>
+    <script src="components/results_filter.js"></script>
     <script src="script_management_v2.js"></script>
 </body>
 

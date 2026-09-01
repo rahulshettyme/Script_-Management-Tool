@@ -31,26 +31,66 @@ def run(rows, token, env_config):
     }
 
     # --- 2. UNIT CONVERSION LOGIC (Fetch Once) ---
-    conversion_factor = 1.0
-    try:
-        # A. Company Config (Hardcoded ID 1251 as per original)
-        comp_res = requests.get(f"{base_url}/services/farm/api/companies/1251", headers=headers)
-        if comp_res.status_code == 200:
-            comp_data = comp_res.json()
-            comp_unit = comp_data.get('data', {}).get('preferences', {}).get('areaUnits', 'acre').lower()
-        else:
-            comp_unit = 'acre'
+    # A. User Info & Company ID
+    user_res = requests.get(f"{base_url}/services/user/api/users/user-info", headers=headers)
+    if user_res.status_code != 200:
+        raise RuntimeError(f"Failed to fetch user info. API returned status {user_res.status_code}: {user_res.text}")
+    company_id = user_res.json().get('companyId')
+    if not company_id:
+        raise RuntimeError("companyId not found in user-info response.")
 
-        # B. Determine Factor
-        # Need: Convert FROM GeoAPI(Acre) TO Company Unit (Target)
-        # GeoAPI is always in Acres.
-        if comp_unit in ['ha', 'hectare']:
-            conversion_factor = 0.404686 # Acre to Hectare
-        else:
-            conversion_factor = 1.0      # Acre to Acre
-            
-    except Exception as e:
-        print(f"Warning: Failed to determine unit conversion: {e}")
+    # B. Company Config
+    comp_res = requests.get(f"{base_url}/services/farm/api/companies/{company_id}", headers=headers)
+    if comp_res.status_code != 200:
+        raise RuntimeError(f"Failed to fetch company details for ID {company_id}. API returned status {comp_res.status_code}: {comp_res.text}")
+    
+    comp_data = comp_res.json()
+    comp_unit = comp_data.get('data', {}).get('preferences', {}).get('areaUnits')
+    if not comp_unit:
+        raise RuntimeError(f"areaUnits preference not found for company ID {company_id}.")
+    comp_unit = comp_unit.strip().lower()
+
+    # C. Fetch Unit Master & Conversions
+    unit_res = requests.get(f"{base_url}/services/farm/api/unit-conversions/unit-master?unitType=Area", headers=headers)
+    if unit_res.status_code != 200:
+        raise RuntimeError(f"Failed to fetch unit master. API returned status {unit_res.status_code}: {unit_res.text}")
+    
+    unit_data = unit_res.json()
+    unit_masters = unit_data.get('unit-master', [])
+    unit_conversions = unit_data.get('unit-conversion', [])
+
+    # D. Resolve Source Unit ID (Acre)
+    src_unit = next(
+        (u for u in unit_masters if u.get('unitType', '').strip().lower() == 'area' and u.get('name', '').strip().lower() == 'acre'),
+        None
+    )
+    if not src_unit:
+        raise RuntimeError("Source unit 'Acre' of type 'Area' not found in unit-master.")
+    src_unit_id = src_unit.get('id')
+
+    # E. Resolve Target Unit ID (Company Unit)
+    tgt_unit = next(
+        (u for u in unit_masters if u.get('unitType', '').strip().lower() == 'area' and (
+            u.get('name', '').strip().lower() == comp_unit or 
+            u.get('unitSymbol', '').strip().lower() == comp_unit or 
+            u.get('unitShortCode', '').strip().lower() == comp_unit or
+            u.get('unitCode', '').strip().lower() == comp_unit
+        )),
+        None
+    )
+    if not tgt_unit:
+        raise RuntimeError(f"Target company unit '{comp_unit}' of type 'Area' not found in unit-master.")
+    tgt_unit_id = tgt_unit.get('id')
+
+    # F. Find Conversion Factor
+    conv_entry = next(
+        (c for c in unit_conversions if c.get('fromUnitId') == src_unit_id and c.get('toUnitId') == tgt_unit_id and c.get('unitType', '').strip().lower() == 'area'),
+        None
+    )
+    if not conv_entry:
+        raise RuntimeError(f"No unit conversion factor found from unit ID {src_unit_id} (Acre) to unit ID {tgt_unit_id} ({comp_unit}) of type 'Area'.")
+    
+    conversion_factor = float(conv_entry.get('conversionFactor'))
 
     # --- 3. COORDINATE UTILS ---
     ACRE_M2 = 4046.8564224

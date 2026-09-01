@@ -16,6 +16,7 @@ const API_BASE = window.location.origin; // Dynamic Base URL (works for localhos
 
 // State
 let lastOutputData = null;
+let activeOnboardingFilter = null;
 let detectedColumns = [];
 let envConfig = {};
 let authToken = localStorage.getItem('authToken');
@@ -67,14 +68,43 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         // Find if it's a draft
         // cachedScriptListData is populated by fetchScriptsList
-        const draftItem = cachedScriptListData.find(i => i.name === filename && i.isDraft);
+        const draftItem = cachedScriptListData.find(i => {
+            if (!i.isDraft) return false;
+            const targetNorm = filename.replace('.py', '').replace(/ /g, '_').toLowerCase();
+            const iNameNorm = i.name.replace('.py', '').replace(/ /g, '_').toLowerCase();
+            const iFileNorm = i.filename ? i.filename.replace('.py', '').replace(/ /g, '_').toLowerCase() : '';
+            return iNameNorm === targetNorm || iFileNorm === targetNorm;
+        });
 
         if (draftItem) {
-            await loadScriptByName(`DRAFT:${filename}`);
+            await loadScriptByName(`DRAFT:${draftItem.filename || filename}`);
         } else {
             // Fallback to trying Active
             await loadScriptByName(filename);
         }
+    }
+
+    // Setup change/input listeners for script settings to update pythonCode configs dynamically
+    const inputsToSync = ['isMultithreaded', 'allowAdditionalAttributes', 'enableGeofencing', 'threadSize', 'groupByColumn', 'enableBatchProcessing'];
+    inputsToSync.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.addEventListener('change', () => {
+                if (window.syncCodeConfigsFromUI) window.syncCodeConfigsFromUI();
+            });
+            if (el.tagName === 'INPUT' && el.type === 'text') {
+                el.addEventListener('input', () => {
+                    if (window.syncCodeConfigsFromUI) window.syncCodeConfigsFromUI();
+                });
+            }
+        }
+    });
+
+    const pythonCodeArea = document.getElementById('pythonCode');
+    if (pythonCodeArea) {
+        pythonCodeArea.addEventListener('input', () => {
+            if (window.syncUIFromCode) window.syncUIFromCode(pythonCodeArea.value);
+        });
     }
 });
 
@@ -89,6 +119,7 @@ window.toggleAdditionalAttributes = function (checkbox) {
         // If hidden/unchecked, ensure the runtime toggle is also reset? 
         // No, keep state. But maybe uncheck runtime if global is off.
     }
+    if (window.syncCodeConfigsFromUI) window.syncCodeConfigsFromUI();
 }
 
 window.toggleTestAttributesInput = function (checkbox) {
@@ -101,6 +132,9 @@ window.toggleTestAttributesInput = function (checkbox) {
 window.toggleParallelProcessing = function (checkbox) {
     const batchProcessing = document.getElementById('enableBatchProcessing');
     const container = document.getElementById('threadSizeContainer');
+    const threadSizeLabel = document.getElementById('threadSizeLabel');
+    const threadSizeSelect = document.getElementById('threadSize');
+    const allowLargeBatchContainer = document.getElementById('allowLargeBatchContainer');
     
     if (checkbox.checked) {
         // Parallel active -> Disable Batch
@@ -113,6 +147,11 @@ window.toggleParallelProcessing = function (checkbox) {
         if (container) {
             container.style.opacity = '1';
             container.style.pointerEvents = 'all';
+            if (threadSizeLabel) threadSizeLabel.textContent = "Thread Count:";
+            if (allowLargeBatchContainer) allowLargeBatchContainer.style.display = 'none';
+            if (threadSizeSelect) {
+                threadSizeSelect.innerHTML = '<option value="1" selected>1</option><option value="2">2</option><option value="5">5</option><option value="10">10</option>';
+            }
         }
     } else {
         // Parallel inactive -> Enable Batch
@@ -127,11 +166,15 @@ window.toggleParallelProcessing = function (checkbox) {
             container.style.pointerEvents = 'none';
         }
     }
+    if (window.syncCodeConfigsFromUI) window.syncCodeConfigsFromUI();
 }
 
 window.toggleBatchProcessing = function (checkbox) {
     const parallelProcessing = document.getElementById('isMultithreaded');
     const container = document.getElementById('threadSizeContainer');
+    const threadSizeLabel = document.getElementById('threadSizeLabel');
+    const threadSizeSelect = document.getElementById('threadSize');
+    const allowLargeBatchContainer = document.getElementById('allowLargeBatchContainer');
     
     if (checkbox.checked) {
         // Batch active -> Disable Parallel
@@ -144,6 +187,11 @@ window.toggleBatchProcessing = function (checkbox) {
         if (container) {
             container.style.opacity = '1';
             container.style.pointerEvents = 'all';
+            if (threadSizeLabel) threadSizeLabel.textContent = "Batch Size:";
+            if (allowLargeBatchContainer) allowLargeBatchContainer.style.display = 'flex';
+            if (threadSizeSelect) {
+                threadSizeSelect.innerHTML = '<option value="1" selected>1</option><option value="5">5</option><option value="10">10</option><option value="20">20</option><option value="25">25</option><option value="50">50</option><option value="100">100</option>';
+            }
         }
     } else {
         // Batch inactive -> Enable Parallel
@@ -158,6 +206,7 @@ window.toggleBatchProcessing = function (checkbox) {
             container.style.pointerEvents = 'none';
         }
     }
+    if (window.syncCodeConfigsFromUI) window.syncCodeConfigsFromUI();
 }
 
 window.toggleGeofence = function (checkbox) {
@@ -168,6 +217,7 @@ window.toggleGeofence = function (checkbox) {
             fetchMapsKeyAndInit();
         }
     }
+    if (window.syncCodeConfigsFromUI) window.syncCodeConfigsFromUI();
 }
 
 // Google Maps Integration
@@ -389,6 +439,7 @@ async function loadScriptByName(filenameKey) {
     // If it's a draft, we track it directly. If active, we still track it as base name.
     // Logic: If user saves as different name, we send this. Backend checks if different.
     window.originalFilename = filename.replace("DRAFT:", "");
+    currentFilename = filename.replace("DRAFT:", "");
 
     let isDraft = false;
     let displayMsg = "Script loaded! You can now analyze, test, or Update it.";
@@ -400,10 +451,17 @@ async function loadScriptByName(filenameKey) {
     } else {
         // It's an Active script selection.
         // Check if a hidden draft exists (window.availableDraftFiles populated by fetchScriptsList)
-        const hiddenDraft = window.availableDraftFiles && window.availableDraftFiles.find(d => d.name === filename);
+        const hiddenDraft = window.availableDraftFiles && window.availableDraftFiles.find(d => {
+            const dFile = d.filename || d.name || "";
+            const targetFile = filename || "";
+            const dNorm = dFile.replace('.py', '').replace(/ /g, '_').toLowerCase();
+            const targetNorm = targetFile.replace('.py', '').replace(/ /g, '_').toLowerCase();
+            return dNorm === targetNorm;
+        });
         if (hiddenDraft) {
             console.log(`Auto-switching to Draft version for ${filename}`);
             isDraft = true;
+            filename = hiddenDraft.filename || filename;
             displayMsg = `Loaded DRAFT version for '${filename}' (continuing work).`;
         }
     }
@@ -448,6 +506,10 @@ async function loadScriptByName(filenameKey) {
             const threadSizeSelect = document.getElementById('threadSize');
             if (threadSizeSelect) {
                 threadSizeSelect.value = (data.meta && data.meta.batchSize) ? data.meta.batchSize : 5;
+            }
+            const allowLargeBatchCb = document.getElementById('allowLargeBatch');
+            if (allowLargeBatchCb) {
+                allowLargeBatchCb.checked = !!(data.meta && data.meta.allowLargeBatch);
             }
 
             // Populate Description
@@ -546,7 +608,7 @@ async function loadScriptByName(filenameKey) {
                     // Or we default to OFF? User said "should be just like how we will have in data generate page" (usually off by default?)
                     // But for a draft, if I saved it with values, I probably want them back.
                     if (useAttrCheckbox) {
-                        useAttrCheckbox.checked = true;
+                        useAttrCheckbox.checked = false;
                         if (window.toggleTestAttributesInput) window.toggleTestAttributesInput(useAttrCheckbox);
                     }
                 } else {
@@ -664,6 +726,16 @@ async function loadScriptByName(filenameKey) {
                 }
             }
 
+            // Populate Output Columns
+            const outInput = document.getElementById('globalOutputColumns');
+            if (outInput) {
+                if (data.meta && data.meta.outputColumns && Array.isArray(data.meta.outputColumns)) {
+                    outInput.value = data.meta.outputColumns.join(', ');
+                } else {
+                    outInput.value = "";
+                }
+            }
+
             // Sync Visuals (Analysis Tab) immediately
             const uiCols = (data.meta && data.meta.outputConfig && data.meta.outputConfig.uiMapping)
                 ? data.meta.outputConfig.uiMapping.map(m => m.colName)
@@ -678,10 +750,15 @@ async function loadScriptByName(filenameKey) {
             }
 
             // alert(displayMsg); // Removed alert for smoother UX
-            console.log(displayMsg);
+            if (typeof displayMsg !== 'undefined') console.log(displayMsg);
 
             // Update Analysis View
             // analyzeScript(); 
+
+            // Initialize test section UI visibility based on loaded config
+            if (typeof updateTestSectionUI === 'function') {
+                updateTestSectionUI();
+            }
 
         } else {
             alert("Failed to load content.");
@@ -823,7 +900,7 @@ function renderScriptList(items) {
             </div>
             <div style="display:flex; align-items:center; gap:8px;">
                  ${typeLabel}
-                 <button title="Copy Script" onclick="event.stopPropagation(); loadScriptAsCopy('${item.name}', ${item.isDraft})" style="background:none; border:none; cursor:pointer; font-size:1.1rem;">📋</button>
+                 <button title="Copy Script" onclick="event.stopPropagation(); loadScriptAsCopy('${item.filename || item.name}', ${item.isDraft})" style="background:none; border:none; cursor:pointer; font-size:1.1rem;">📋</button>
             </div>
         `;
         listContainer.appendChild(div);
@@ -1143,6 +1220,21 @@ function addStep(type) {
         container.innerHTML = '';
     }
 
+    // Build Sorted Master Type Options HTML
+    const masterOptions = [
+        { value: 'user', label: 'User' },
+        { value: 'farmer', label: 'Farmer' },
+        { value: 'soiltype', label: 'Soil Type' },
+        { value: 'irrigationtype', label: 'Irrigation Type' },
+        { value: 'closePlotReason', label: 'Close Plot Reason' },
+        { value: 'project', label: 'Project' },
+        { value: 'farmertag', label: 'Farmer Tag' },
+        { value: 'assettag', label: 'Asset Tag' },
+        { value: 'plottag', label: 'Plot Tag' }
+    ];
+    masterOptions.sort((a, b) => a.label.localeCompare(b.label));
+    const masterOptionsHTML = masterOptions.map(opt => `<option value="${opt.value}">${opt.label}</option>`).join('\n');
+
     const div = document.createElement('div');
     div.className = 'step-row';
     div.id = `step-${stepCount}`;
@@ -1241,14 +1333,7 @@ function addStep(type) {
                     <label style="font-size: 0.8rem; color: #c084fc;">Master Type</label>
                     <select class="step-master-type" onchange="updateMasterTypeInfo(this)" style="width: 100%; padding: 5px; background: #0f172a; color: #c084fc; border: 1px solid #a855f7; font-weight: bold;">
                         <option value="">-- Select Master Type --</option>
-                        <option value="user">User</option>
-                        <option value="farmer">Farmer</option>
-                        <option value="soiltype">Soil Type</option>
-                        <option value="irrigationtype">Irrigation Type</option>
-                        <option value="project">Project</option>
-                        <option value="farmertag">Farmer Tag</option>
-                        <option value="assettag">Asset Tag</option>
-                        <option value="plottag">Plot Tag</option>
+                        ${masterOptionsHTML}
                     </select>
                 </div>
                 <div>
@@ -1323,6 +1408,7 @@ function updateMasterTypeInfo(select) {
         'farmer': { runMethod: 'search', suffix: '_id' },
         'soiltype': { runMethod: 'once', suffix: '_id' },
         'irrigationtype': { runMethod: 'once', suffix: '_id' },
+        'closePlotReason': { runMethod: 'once', suffix: '_id' },
         'project': { runMethod: 'once', suffix: '_id' },
         'farmertag': { runMethod: 'once', suffix: '_id' },
         'assettag': { runMethod: 'once', suffix: '_id' },
@@ -1408,6 +1494,7 @@ async function generateScriptFromSteps() {
                 // existing_code: document.getElementById('pythonCode').value, // DISABLE MERGE: Always regenerate fresh from steps
                 scriptName: name,
                 inputColumns: globalCols, // Persist manually entered columns
+                outputColumns: document.getElementById('globalOutputColumns') ? document.getElementById('globalOutputColumns').value : "",
                 isMultithreaded: document.getElementById('isMultithreaded') ? document.getElementById('isMultithreaded').checked : true,
                 allowAdditionalAttributes: document.getElementById('allowAdditionalAttributes') ? document.getElementById('allowAdditionalAttributes').checked : false,
                 enableGeofencing: document.getElementById('enableGeofencing') ? document.getElementById('enableGeofencing').checked : false,
@@ -1567,6 +1654,7 @@ function renderAnalysis(data) {
 async function proceedToTest() {
     console.log("Proceeding...");
     // alert("Debug: Proceed clicked"); // Debugging click
+    if (window.syncCodeConfigsFromUI) window.syncCodeConfigsFromUI();
     const code = document.getElementById('pythonCode').value;
     const name = document.getElementById('scriptName').value;
 
@@ -1577,6 +1665,10 @@ async function proceedToTest() {
     // If it's empty, user purposefully cleared it.
     const manualVal = document.getElementById('globalInputColumns').value;
     let finalCols = manualVal ? manualVal.split(',').map(s => s.trim()).filter(s => s) : [];
+
+    // Output Columns
+    const outVal = document.getElementById('globalOutputColumns') ? document.getElementById('globalOutputColumns').value : "";
+    let finalOutputCols = outVal ? outVal.split(',').map(s => s.trim()).filter(s => s) : [];
 
     // REMOVED SAFETY FILTER: User should be able to have columns in both Input and UI Output
     // If we filter here, we lose columns that are used for both (like CA_ID).
@@ -1602,6 +1694,7 @@ async function proceedToTest() {
                 description: document.getElementById('scriptDescription').value || "", // Human description
                 generationPrompt: currentDesc, // Steps logic for AI
                 inputColumns: finalCols,
+                outputColumns: finalOutputCols,
                 isMultithreaded: document.getElementById('isMultithreaded').checked,
                 allowAdditionalAttributes: document.getElementById('allowAdditionalAttributes') ? document.getElementById('allowAdditionalAttributes').checked : false,
                 additionalAttributes: (document.getElementById('allowAdditionalAttributes') && document.getElementById('allowAdditionalAttributes').checked)
@@ -1612,6 +1705,7 @@ async function proceedToTest() {
                 batchSize: (document.getElementById('isMultithreaded').checked || document.getElementById('enableBatchProcessing').checked)
                     ? (parseInt(document.getElementById('threadSize').value) || 5)
                     : 1,
+                allowLargeBatch: document.getElementById('allowLargeBatch') ? document.getElementById('allowLargeBatch').checked : false,
                 groupByColumn: document.getElementById('groupByColumn').value,
                 outputConfig: getOutputConfigFromUI(),
                 status: 'draft',
@@ -1622,9 +1716,11 @@ async function proceedToTest() {
 
         if (data.success) {
             currentFilename = `${name}.py`;
+            window.originalFilename = currentFilename;
             isDraftSaved = true;
 
-            // Unlock Test Section
+            // Update and Unlock Test Section
+            updateTestSectionUI();
             document.getElementById('testSection').style.opacity = '1';
             document.getElementById('testSection').style.pointerEvents = 'all';
 
@@ -1638,10 +1734,49 @@ async function proceedToTest() {
     }
 }
 
+function updateTestSectionUI() {
+    // Sync attributes UI
+    const allowAttrsCheckbox = document.getElementById('allowAdditionalAttributes');
+    const testAttrsContainer = document.getElementById('attributesContainer');
+    if (allowAttrsCheckbox && testAttrsContainer) {
+        testAttrsContainer.style.display = allowAttrsCheckbox.checked ? 'block' : 'none';
+    }
+
+    // Sync geofencing UI
+    const enableGeofencingCheckbox = document.getElementById('enableGeofencing');
+    const testGeofenceContainer = document.getElementById('geofenceContainer');
+    if (enableGeofencingCheckbox && testGeofenceContainer) {
+        testGeofenceContainer.style.display = enableGeofencingCheckbox.checked ? 'block' : 'none';
+    }
+
+    // Sync batch size UI
+    const isBatchActive = document.getElementById('enableBatchProcessing') && document.getElementById('enableBatchProcessing').checked;
+    const testBatchSizeContainer = document.getElementById('testBatchSizeContainer');
+    const testBatchSizeInput = document.getElementById('testBatchSize');
+    const threadSizeInput = document.getElementById('threadSize');
+    
+    if (testBatchSizeContainer) {
+        if (isBatchActive) {
+            testBatchSizeContainer.style.display = 'block';
+            if (threadSizeInput && testBatchSizeInput) {
+                testBatchSizeInput.value = threadSizeInput.value || 5;
+            }
+        } else {
+            testBatchSizeContainer.style.display = 'none';
+        }
+    }
+}
+
 // 4. Run Test (Debug Trace)
 async function runTest() {
     if (!isDraftSaved) return alert("Please click 'Proceed to Test' first.");
     if (!authToken) return alert("Please Login first.");
+
+    if (activeOnboardingFilter) {
+        activeOnboardingFilter.destroy();
+        activeOnboardingFilter = null;
+    }
+    toggleOnboardingDownloadMenu(false);
 
     const fileInput = document.getElementById('testFile');
     if (!fileInput.files.length) return alert("Upload Excel file.");
@@ -1666,17 +1801,28 @@ async function runTest() {
             targetLocation: targetLoc
         }));
 
-        // Ensure envConfig in JSON body also has it
-        const finalEnvConfig = {
-            environment: window.globalEnv || "QA2",
-            apiBaseUrl: (envConfig.apiurl && envConfig.apiurl[window.globalEnv || "QA2"]) || "",
-            targetLocation: targetLoc,
-            batchSize: (document.getElementById('isMultithreaded').checked || document.getElementById('enableBatchProcessing').checked)
-                ? (parseInt(document.getElementById('threadSize').value) || 5)
-                : 1,
-            allowAdditionalAttributes: document.getElementById('allowAdditionalAttributes') ? document.getElementById('allowAdditionalAttributes').checked : false,
-            additionalAttributes: document.getElementById('useTestAttributes') && document.getElementById('useTestAttributes').checked ?
-                document.getElementById('testAttributes').value.split(',').map(s => s.trim()).filter(s => s) : [],
+            // Ensure envConfig in JSON body also has it
+            
+            const isMultithreaded = document.getElementById('isMultithreaded').checked;
+            const isBatchActive = document.getElementById('enableBatchProcessing').checked;
+            let runBatchSize = 1;
+            
+            if (isMultithreaded) {
+                runBatchSize = parseInt(document.getElementById('threadSize').value) || 5;
+            } else if (isBatchActive) {
+                const testBatchInput = document.getElementById('testBatchSize');
+                runBatchSize = (testBatchInput && testBatchInput.value) ? parseInt(testBatchInput.value) : (parseInt(document.getElementById('threadSize').value) || 5);
+            }
+
+            const finalEnvConfig = {
+                environment: window.globalEnv || "QA2",
+                apiBaseUrl: (envConfig.apiurl && envConfig.apiurl[window.globalEnv || "QA2"]) || "",
+                targetLocation: targetLoc,
+                batchSize: runBatchSize,
+                allowLargeBatch: document.getElementById('allowLargeBatch') ? document.getElementById('allowLargeBatch').checked : false,
+                allowAdditionalAttributes: document.getElementById('allowAdditionalAttributes') ? document.getElementById('allowAdditionalAttributes').checked : false,
+                additionalAttributes: document.getElementById('useTestAttributes') && document.getElementById('useTestAttributes').checked ?
+                    document.getElementById('testAttributes').value.split(',').map(s => s.trim()).filter(s => s) : [],
             // Merge V2 Params if active
             ...(window.getAreaAuditV2Params ? window.getAreaAuditV2Params() : {})
         };
@@ -1725,7 +1871,7 @@ async function runTest() {
                 rows: rows,
                 token: authToken,
                 envConfig: finalEnvConfig,
-                columns: document.getElementById('manualColumns').value.split(',').map(s => s.trim()).filter(s => s)
+                columns: document.getElementById('globalInputColumns').value.split(',').map(s => s.trim()).filter(s => s)
             });
             console.log("Payload size:", payload.length);
         } catch (jsonErr) {
@@ -1742,7 +1888,7 @@ async function runTest() {
                 rows: rows,
                 token: authToken,
                 envConfig: finalEnvConfig,
-                columns: document.getElementById('manualColumns').value.split(',').map(s => s.trim()).filter(s => s)
+                columns: document.getElementById('globalInputColumns').value.split(',').map(s => s.trim()).filter(s => s)
             })
         });
 
@@ -2004,9 +2150,11 @@ function buildDescriptionFromSteps(name, globalCols, steps) {
         'farmer': { runMethod: 'search', suffix: '_id' },
         'soiltype': { runMethod: 'once', suffix: '_id' },
         'irrigationtype': { runMethod: 'once', suffix: '_id' },
+        'closePlotReason': { runMethod: 'once', suffix: '_id' },
         'project': { runMethod: 'once', suffix: '_id' },
         'farmertag': { runMethod: 'once', suffix: '_id' },
-        'assettag': { runMethod: 'once', suffix: '_id' }
+        'assettag': { runMethod: 'once', suffix: '_id' },
+        'plottag': { runMethod: 'once', suffix: '_id' }
     };
 
     Array.from(steps).forEach((step, index) => {
@@ -2073,7 +2221,7 @@ function buildDescriptionFromSteps(name, globalCols, steps) {
             const logic = step.querySelector('.step-logic').value;
             description += `  - Geo Location Logic: ${logic}\n`;
             description += `  - IMPORTANT: You MUST import and use 'components.geofence_utils' for this step.\n`;
-            description += `  - Usage: boundary_data = geofence_utils.get_boundary(location_name, env_config.get('google_api_key'))\n`;
+            description += `  - Usage: boundary_data = geofence_utils.get_boundary(location_name, env_config.get('Geocoding_api_key'))\n`;
             description += `  - CRITICAL: 'boundary_data' IS the direct result object. It is NOT wrapped in 'google_response' or 'data'.\n`;
             description += `  - 'boundary_data' structure: { "formatted_address": "...", "geometry": { "location": {...}, "viewport": {...}, "bounds": {...} }, "place_id": "...", "address_components": [...], "geojson_polygon": {...} }\n`;
             description += `  - NOTE: 'geojson_polygon' is ALREADY a FeatureCollection. DO NOT wrap it in another FeatureCollection or check for 'Polygon' type.\n`;
@@ -2116,6 +2264,7 @@ function buildDescriptionFromSteps(name, globalCols, steps) {
 }
 
 async function importScript() {
+    if (window.syncCodeConfigsFromUI) window.syncCodeConfigsFromUI();
     if (!currentFilename) return;
     const comment = document.getElementById('reviewComments').value;
 
@@ -2153,7 +2302,14 @@ async function importScript() {
             }));
     }
 
-    await fetch('/api/scripts/register', {
+    // Capture Output Columns
+    const outputVal = document.getElementById('globalOutputColumns') ? document.getElementById('globalOutputColumns').value : "";
+    let outputColumns = [];
+    if (outputVal && outputVal.trim()) {
+        outputColumns = outputVal.split(',').map(s => s.trim()).filter(s => s);
+    }
+
+    const res = await fetch('/api/scripts/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2164,31 +2320,42 @@ async function importScript() {
             description: document.getElementById('scriptDescription').value || "User Script",
             generationPrompt: window.lastGeneratedDescription || window.loadedGenerationPrompt || "",
             inputColumns: inputColumns, // Send captured columns
+            outputColumns: outputColumns,
             comments: comment,
             // Pass configs
             isMultithreaded: document.getElementById('isMultithreaded').checked,
             allowAdditionalAttributes: document.getElementById('allowAdditionalAttributes') ? document.getElementById('allowAdditionalAttributes').checked : false,
-            // Capture the list of attributes
-            additionalAttributes: (document.getElementById('allowAdditionalAttributes') && document.getElementById('allowAdditionalAttributes').checked)
-                ? (document.getElementById('testAttributes').value.split(',').map(s => s.trim()).filter(s => s))
-                : [],
+            // Do not save specific testing attributes in final registry
+            additionalAttributes: [],
             enableGeofencing: document.getElementById('enableGeofencing') ? document.getElementById('enableGeofencing').checked : false,
             groupByColumn: document.getElementById('groupByColumn').value,
             batchSize: (document.getElementById('isMultithreaded').checked || document.getElementById('enableBatchProcessing').checked)
                 ? (parseInt(document.getElementById('threadSize').value) || 5)
                 : 1,
-            outputConfig: getOutputConfigFromUI()
+            allowLargeBatch: document.getElementById('allowLargeBatch') ? document.getElementById('allowLargeBatch').checked : false,
+            outputConfig: getOutputConfigFromUI(),
+            originalFilename: window.originalFilename
         })
     });
 
-    alert("Script Registered Successfully! 🎉");
+    if (res.ok) {
+        window.originalFilename = currentFilename;
+        alert("Script Registered Successfully! 🎉");
 
-    // Refresh definitions in script.js so columns are updated immediately
-    if (typeof loadCustomScripts === 'function') {
-        console.log("Refreshing Custom Scripts Definitions...");
-        loadCustomScripts();
+        // Refresh definitions in script.js so columns are updated immediately
+        if (typeof loadCustomScripts === 'function') {
+            console.log("Refreshing Custom Scripts Definitions...");
+            loadCustomScripts();
+        }
+        location.reload();
+    } else {
+        try {
+            const errData = await res.json();
+            alert("Registration Failed: " + (errData.error || "Unknown error"));
+        } catch (e) {
+            alert("Registration Failed with status code " + res.status);
+        }
     }
-    location.reload();
 }
 
 // Helper to flatten nested JSON
@@ -2206,22 +2373,82 @@ function flattenObject(obj, prefix = '', res = {}) {
     return res;
 }
 
-function downloadTestOutput() {
-    if (!lastOutputData) return alert("No output data available.");
-
+function _doOnboardingDownload(data, baseFilename) {
+    if (!data || data.length === 0) return;
+    
     // Flatten data for better Excel compatibility
-    const flatData = lastOutputData.map(row => {
+    const flatData = data.map(row => {
         const flat = flattenObject(row);
         // Remove internal 'row' index if present to avoid duplicate/confusing columns
         delete flat['row'];
         return flat;
     });
 
-    const ws = XLSX.utils.json_to_sheet(flatData);
+    // Parse input and output columns from the UI definitions
+    const inputVal = document.getElementById('globalInputColumns') ? document.getElementById('globalInputColumns').value : "";
+    const outputVal = document.getElementById('globalOutputColumns') ? document.getElementById('globalOutputColumns').value : "";
+    const inputCols = inputVal.split(',').map(s => s.trim()).filter(s => s);
+    const outputCols = outputVal.split(',').map(s => s.trim()).filter(s => s);
+
+    const excludedKeys = ['Response', 'response', 'Status', 'status', 'Code', 'code', 'Name', 'name'];
+
+    const filteredData = flatData.map(row => {
+        const cleanRow = {};
+        Object.keys(row).forEach(k => {
+            if (inputCols.includes(k) || outputCols.includes(k) || !excludedKeys.includes(k)) {
+                cleanRow[k] = row[k];
+            }
+        });
+        return cleanRow;
+    });
+
+    // Collect all keys present in filteredData
+    const allKeysInRow = new Set();
+    filteredData.forEach(row => {
+        Object.keys(row).forEach(k => {
+            if (k !== 'row') {
+                allKeysInRow.add(k);
+            }
+        });
+    });
+
+    // Order final headers dynamically
+    const finalHeaders = [];
+    inputCols.forEach(c => {
+        if (allKeysInRow.has(c)) {
+            finalHeaders.push(c);
+            allKeysInRow.delete(c);
+        }
+    });
+    outputCols.forEach(c => {
+        if (allKeysInRow.has(c)) {
+            finalHeaders.push(c);
+            allKeysInRow.delete(c);
+        }
+    });
+
+    // Leftover keys (like dynamic/additional attributes uploaded by user)
+    const leftoverKeys = Array.from(allKeysInRow);
+    finalHeaders.push(...leftoverKeys);
+
+    const ws = XLSX.utils.json_to_sheet(filteredData, { header: finalHeaders });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Output");
-    XLSX.writeFile(wb, "Test_Output.xlsx");
+    XLSX.writeFile(wb, `${baseFilename}.xlsx`);
 }
+
+window.downloadTestOutput = function (mode = 'all') {
+    toggleOnboardingDownloadMenu(false); // close menu first
+    if (activeOnboardingFilter) {
+        activeOnboardingFilter.download(mode);
+    } else {
+        _doOnboardingDownload(lastOutputData, "Test_Output");
+    }
+};
+
+window.toggleOnboardingDownloadMenu = function (forceState) {
+    // No-op: select dropdown handles opening/closing natively
+};
 
 // --- Helpers (Fetch Config etc) copied from previous ---
 async function fetchEnvConfig() {
@@ -2324,7 +2551,8 @@ function downloadTemplate() {
     // No fallback to analyzer findings per user request - user field is source of truth
 
     // Append Custom Attributes to Columns
-    if (document.getElementById('allowAdditionalAttributes').checked && attrInput && attrInput.value.trim()) {
+    const useTestAttributesCheckbox = document.getElementById('useTestAttributes');
+    if (useTestAttributesCheckbox && useTestAttributesCheckbox.checked && attrInput && attrInput.value.trim()) {
         const parts = attrInput.value.split(',').map(s => s.trim()).filter(s => s);
         parts.forEach(p => {
             const key = p.split('=')[0].trim();
@@ -2430,13 +2658,13 @@ window.openOutputConfigModal = function () {
 
     // Populate Datalist
     const globalVal = document.getElementById('globalInputColumns').value;
-    // const manualVal = document.getElementById('manualColumns').value; // REMOVED: potentially stale
+    const outputVal = document.getElementById('globalOutputColumns') ? document.getElementById('globalOutputColumns').value : "";
     const list = document.getElementById('inputColumnsList');
     list.innerHTML = ""; // Clear
 
     const allCols = new Set();
     if (globalVal) globalVal.split(',').forEach(s => allCols.add(s.trim()));
-    // if (manualVal) manualVal.split(',').forEach(s => allCols.add(s.trim())); // REMOVED
+    if (outputVal) outputVal.split(',').forEach(s => allCols.add(s.trim()));
 
     allCols.forEach(col => {
         if (col) {
@@ -2724,7 +2952,7 @@ async function autoPopulateStepsFromAI(code) {
 // =============================================
 // HELPER: Sync UI Fields from Code Comments
 // =============================================
-function syncUIFromCode(code) {
+window.syncUIFromCode = function (code) {
     if (!code) return;
 
     // 1. Group By Column
@@ -2757,6 +2985,70 @@ function syncUIFromCode(code) {
             mtCheckbox.checked = isTrue;
             window.toggleParallelProcessing(mtCheckbox);
         }
+    }
+
+    // 4. Allow Additional Attributes
+    const attrMatch = code.match(/#\s*CONFIG:\s*allowAdditionalAttributes\s*=\s*(True|False|true|false)/i);
+    const attrCheckbox = document.getElementById('allowAdditionalAttributes');
+    if (attrCheckbox && attrMatch && attrMatch[1]) {
+        const isTrue = attrMatch[1].toLowerCase() === 'true';
+        attrCheckbox.checked = isTrue;
+        window.toggleAdditionalAttributes(attrCheckbox);
+    }
+
+    // 5. Enable Geofencing
+    const geoMatch = code.match(/#\s*CONFIG:\s*enableGeofencing\s*=\s*(True|False|true|false)/i);
+    const geoCheckbox = document.getElementById('enableGeofencing');
+    if (geoCheckbox && geoMatch && geoMatch[1]) {
+        const isTrue = geoMatch[1].toLowerCase() === 'true';
+        geoCheckbox.checked = isTrue;
+        window.toggleGeofence(geoCheckbox);
+    }
+}
+
+// =============================================
+// HELPER: Sync Code Editor CONFIG comments from UI Controls
+// =============================================
+window.syncCodeConfigsFromUI = function () {
+    const codeArea = document.getElementById('pythonCode');
+    if (!codeArea) return;
+    const code = codeArea.value;
+
+    const isMultithreaded = document.getElementById('isMultithreaded') ? document.getElementById('isMultithreaded').checked : false;
+    const allowAdditionalAttributes = document.getElementById('allowAdditionalAttributes') ? document.getElementById('allowAdditionalAttributes').checked : false;
+    const enableGeofencing = document.getElementById('enableGeofencing') ? document.getElementById('enableGeofencing').checked : false;
+    const batchSize = (document.getElementById('isMultithreaded') && document.getElementById('isMultithreaded').checked) || (document.getElementById('enableBatchProcessing') && document.getElementById('enableBatchProcessing').checked)
+        ? (parseInt(document.getElementById('threadSize').value) || 5)
+        : 1;
+    const groupByColumn = document.getElementById('groupByColumn') ? document.getElementById('groupByColumn').value.trim() : "";
+
+    let lines = code.split('\n');
+    const configRegex = /^#\s*CONFIG:\s*(\w+)\s*=\s*(.*)$/i;
+    let otherLines = [];
+
+    lines.forEach(line => {
+        const match = line.match(configRegex);
+        if (!match) {
+            otherLines.push(line);
+        }
+    });
+
+    let configLines = [];
+    configLines.push(`# CONFIG: isMultithreaded = ${isMultithreaded ? 'True' : 'False'}`);
+    configLines.push(`# CONFIG: batchSize = ${batchSize}`);
+    configLines.push(`# CONFIG: enableGeofencing = ${enableGeofencing ? 'True' : 'False'}`);
+    configLines.push(`# CONFIG: allowAdditionalAttributes = ${allowAdditionalAttributes ? 'True' : 'False'}`);
+    if (groupByColumn) {
+        configLines.push(`# CONFIG: groupByColumn = '${groupByColumn}'`);
+    }
+
+    while (otherLines.length > 0 && otherLines[0].trim() === "") {
+        otherLines.shift();
+    }
+
+    const newCode = configLines.join('\n') + '\n\n' + otherLines.join('\n');
+    if (codeArea.value !== newCode) {
+        codeArea.value = newCode;
     }
 }
 
@@ -2867,4 +3159,42 @@ function renderMockResults(data) {
 
     passEl.textContent = passCount;
     failEl.textContent = failCount;
+
+    // ── Initialize Results Filter ────────────────────────────────────────────
+    const table = document.querySelector('#mockResultSection .results-table');
+    if (table && typeof ResultsFilter !== 'undefined' && data.length > 0) {
+        const outMapping = getOutputConfigFromUI();
+        activeOnboardingFilter = new ResultsFilter({
+            tableEl    : table,
+            getData    : () => lastOutputData,
+            isPassFn   : (row) => evaluateOnboardingRowStatus(row, outMapping).isPass,
+            getFileName: () => `Test_Output`,
+            onDownload : _doOnboardingDownload,
+            darkTheme  : true
+        });
+        activeOnboardingFilter.init();
+        activeOnboardingFilter.sync();
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+}
+
+function evaluateOnboardingRowStatus(row, outMapping) {
+    const passCriteria = outMapping.passCriteria || {};
+    
+    // 1. Custom Criteria
+    if (passCriteria.column && row[passCriteria.column] !== undefined) {
+        const val = String(row[passCriteria.column] || '').toLowerCase();
+        if (passCriteria.values && passCriteria.values.length > 0) {
+            const isPass = passCriteria.values.some(v => v.toLowerCase() === val);
+            return { isPass };
+        } else {
+            const isPass = (val === 'pass' || val === 'success' || val === 'true' || val === 'passed');
+            return { isPass };
+        }
+    }
+    
+    // 2. Default Criteria
+    const statusVal = String(row.status || row.Status || '').toLowerCase();
+    const isPass = (statusVal === 'pass' || statusVal === 'success' || statusVal === 'true' || statusVal === 'passed');
+    return { isPass };
 }

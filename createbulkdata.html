@@ -13,6 +13,7 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="components/login_component.css">
     <link rel="stylesheet" href="components/execution_history.css">
+    <link rel="stylesheet" href="components/results_filter.css">
     <style>
         body {
             background-color: #ffffff !important;
@@ -525,6 +526,175 @@
         .data-generate-container {
             padding: 1.5rem !important;
         }
+
+        /* Consent Modal & Trigger Button Styles */
+        .consent-btn-trigger {
+            background-color: #0091d2 !important;
+            color: white !important;
+            border: none !important;
+            border-radius: 4px;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+            width: 100%;
+            text-align: center;
+            transition: all 0.2s;
+            display: inline-block;
+            margin-bottom: 0.75rem;
+        }
+        .consent-btn-trigger:hover {
+            background-color: #007bb5 !important;
+        }
+        .consent-btn-trigger.accepted {
+            background-color: #10b981 !important;
+        }
+        .consent-btn-trigger.accepted:hover {
+            background-color: #059669 !important;
+        }
+
+        .consent-modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(38, 69, 84, 0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            backdrop-filter: blur(4px);
+        }
+
+        .consent-modal-box {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+            border: 1px solid #e2e8f0;
+            animation: modalScaleUp 0.25s ease-out;
+        }
+
+        @keyframes modalScaleUp {
+            from {
+                opacity: 0;
+                transform: scale(0.95);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .consent-modal-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #264554;
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .consent-modal-body {
+            font-size: 0.95rem;
+            color: #4a5568;
+            line-height: 1.5;
+            margin-bottom: 1.5rem;
+        }
+
+        .consent-checkbox-container {
+            display: flex;
+            gap: 12px;
+            align-items: flex-start;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .consent-checkbox {
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
+            accent-color: #0091d2;
+            margin-top: 3px;
+            flex-shrink: 0;
+        }
+
+        .consent-textarea-label {
+            font-size: 0.85rem;
+            font-weight: 700;
+            color: #264554;
+            display: block;
+            margin-bottom: 0.5rem;
+            line-height: 1.4;
+        }
+
+        .consent-textarea {
+            width: 100%;
+            height: 90px;
+            padding: 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 6px;
+            outline: none;
+            resize: none;
+            font-family: inherit;
+            font-size: 0.9rem;
+            box-sizing: border-box;
+            transition: border-color 0.2s;
+            color: #264554;
+            background: white;
+        }
+
+        .consent-textarea:focus {
+            border-color: #0091d2;
+        }
+
+        .consent-modal-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .consent-btn-cancel {
+            background: #f1f5f9;
+            border: none;
+            color: #475569;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        .consent-btn-cancel:hover {
+            background: #e2e8f0;
+        }
+
+        .consent-btn-save {
+            background: #0091d2;
+            border: none;
+            color: white;
+            padding: 8px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        .consent-btn-save:hover {
+            background: #007bb5;
+        }
+
+        .consent-btn-save:disabled {
+            background: #cbd5e1;
+            color: #94a3b8;
+            cursor: not-allowed;
+        }
     </style>
 </head>
 
@@ -797,11 +967,25 @@
                     </div>
 
                     <!-- Start from Row Configuration -->
-                    <div class="form-group" style="margin-bottom: 1rem; text-align: left;">
-                        <label for="start-row-input" style="font-size: 0.85rem; color: #264554; font-weight: 700;">Start from Row</label>
-                        <input type="number" id="start-row-input" class="material-input" value="1" min="1" style="padding: 4px 0;">
-                        <small style="color: #666; font-size: 0.75rem;">Default is 1. Change this to resume an interrupted run.</small>
+                    <div style="display: flex; gap: 1rem; margin-bottom: 1rem;">
+                        <div class="form-group" style="flex: 1; text-align: left;">
+                            <label for="start-row-input" style="font-size: 0.85rem; color: #264554; font-weight: 700;">Start from Row</label>
+                            <input type="number" id="start-row-input" class="material-input" value="1" min="1" style="padding: 4px 0;">
+                            <small style="color: #666; font-size: 0.75rem;">Default is 1.</small>
+                        </div>
+
+                        <!-- Batch Size Configuration -->
+                        <div class="form-group" style="flex: 1; text-align: left;" id="batch-size-container">
+                            <label for="batch-size-input" style="font-size: 0.85rem; color: #264554; font-weight: 700;">Batch Size</label>
+                            <input type="number" id="batch-size-input" class="material-input" value="1" min="1" max="100" style="padding: 4px 0;">
+                            <small style="color: #666; font-size: 0.75rem;" id="batch-size-hint">Max: 100.</small>
+                        </div>
                     </div>
+
+                    <!-- Pre-requisite Consent Button -->
+                    <button id="consent-btn" class="consent-btn-trigger" style="display: none;">
+                        📝 Acknowledge Bulk Execution Pre-requisites
+                    </button>
 
                     <!-- Execute Button -->
                     <button id="execute-btn" class="action-btn" disabled>
@@ -843,10 +1027,16 @@
                 </div>
             </div>
 
-            <!-- Download Results -->
-            <button id="download-results-btn" class="action-btn btn-export hidden" style="margin-top: 1rem;">
-                📥 Download Results Excel
-            </button>
+            <!-- Download Results — Smart Dropdown -->
+            <div id="download-results-btn" class="rf-download-group hidden" style="margin-top: 1rem;">
+                <select id="download-results-select" onchange="handleDownloadSelect(this, 'production')" class="rf-download-select production">
+                    <option value="" disabled selected hidden>📥 Download Results (All)</option>
+                    <option value="all">📥 All Rows</option>
+                    <option value="filtered">🔍 Current Filter View</option>
+                    <option value="fail">❌ Failed Only</option>
+                    <option value="pass">✅ Passed Only</option>
+                </select>
+            </div>
 
             <!-- Results Table -->
             <div style="max-height: 400px; overflow-y: auto; margin-top: 1rem;">
@@ -873,10 +1063,37 @@
         <div id="execution-history-root"></div>
     </div>
 
+    <!-- Consent Modal Overlay -->
+    <div id="consent-modal" class="consent-modal-overlay hidden">
+        <div class="consent-modal-box">
+            <div class="consent-modal-title">
+                ⚠️ Bulk Execution Pre-requisites
+            </div>
+            <div class="consent-modal-body">
+                This execution affects a large dataset (more than 10 records). To ensure safety and correctness, please confirm that you have run tests and specify a feedback reason.
+            </div>
+            <div class="form-group" style="margin-bottom: 1.5rem;">
+                <label class="consent-checkbox-container">
+                    <input type="checkbox" id="consent-checkbox" class="consent-checkbox">
+                    <span style="font-weight: 500; font-size: 0.9rem; line-height: 1.4; color: #264554;">I have tested this script with a sample dataset (10 records or less) and verified that the results are correct.</span>
+                </label>
+            </div>
+            <div class="form-group" style="margin-bottom: 1rem;">
+                <label for="consent-feedback" class="consent-textarea-label">Product Feedback: Why are you using this bulk script instead of the product UI?</label>
+                <textarea id="consent-feedback" class="consent-textarea" placeholder="Please provide your reason here..."></textarea>
+            </div>
+            <div class="consent-modal-actions">
+                <button id="consent-cancel-btn" class="consent-btn-cancel">Cancel</button>
+                <button id="consent-save-btn" class="consent-btn-save" disabled>Save</button>
+            </div>
+        </div>
+    </div>
+
     <script src="System/address_utils.js"></script>
     <script src="components/login_component.js"></script>
     <script src="components/executor_v2.js"></script>
     <script src="components/execution_history.js"></script>
+    <script src="components/results_filter.js"></script>
     <script src="script.js"></script>
 </body>
 

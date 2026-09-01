@@ -177,7 +177,7 @@ def _call_gemini_with_candidates(api_key, models_to_try, payload):
                 time.sleep(1)
     return False, None, last_err
 
-def generate_script(description, is_multithreaded=True, input_columns=None, allow_additional_attributes=False, enable_geofencing=False, output_config=None):
+def generate_script(description, is_multithreaded=True, input_columns=None, allow_additional_attributes=False, enable_geofencing=False, output_config=None, output_columns=None):
     api_key = get_gemini_api_key()
     if not api_key: return generate_heuristic_script(description)
 
@@ -196,8 +196,14 @@ def generate_script(description, is_multithreaded=True, input_columns=None, allo
     run_req = "In run() function: return thread_utils.run_in_parallel(process_func=process_row, items=data, token=token, env_config=env_config). CRITICAL: process_row must have signature 'def process_row(row)' - token and env_config are injected into builtins by thread_utils, access them as builtins.token and builtins.env_config inside process_row." if is_multithreaded else "execute sequentially by iterating data"
 
     prompt = f"You are a Python expert. Description: {description}. {col_req}. Requirements: def run(data, token, env_config), import {', '.join(import_ins)}. {run_req}."
-    if allow_additional_attributes: prompt += "\nNOTE: 'Allow Additional Attributes' is ENABLED. The script executor will AUTOMATICALLY inject additional attributes into your API payloads (json or DTO). You do NOT need to manually call attribute_utils, but you MUST ensure your core payload structure is correct."
+    if allow_additional_attributes: prompt += "\nNOTE: 'Allow Additional Attributes' is ENABLED. The script executor will AUTOMATICALLY inject additional attributes into your API payloads. However, if the description explicitly instructs to manually extract, merge, or replace additional attributes (e.g. step-by-step logic), you MUST write the explicit merging logic inside the Python script's process_row. To do this, write native Python code to iterate over the keys in the excel 'row' dictionary, skip the standard input/output columns (e.g. input columns like 'Farmer Name', 'Farmer ID' or 'Asset Name', 'Asset ID', and outputs like 'Status', 'Response'), and copy/overwrite all other custom columns and their values directly into payload['data'] (cast values to string if necessary). ❌ DO NOT use 'attribute_utils.add_attributes_to_payload' or any other function from 'components.attribute_utils' for this manual merging, as it might return early if the runtime UI checkbox is disabled."
     if enable_geofencing: prompt += "\nCRITICAL REQUIREMENT: Dynamic Geofencing is ENABLED. You MUST import components.geofence_utils as geofence_utils and use 'geofence_utils.check_geofence(lat, lon, env_config.get('targetLocation'), env_config.get('Geocoding_api_key'), cache=geo_cache)' to validate coordinates. Do NOT use hardcoded polygons. Do NOT fallback to simplified logic. Trust that geofence_utils is available."
+    
+    # Date Handling Guideline
+    prompt += "\n\nCRITICAL DATE HANDLING REQUIREMENT:\nIf any input column represents a Date (such as sowingDate, Date of Sowing, Date, etc.) or if the description specifies mapping a date from Excel, Excel might parse it as a numeric serial number (e.g. 46218 for 2026-07-15). You MUST generate a date helper function in the script to convert Excel serial dates and standard date strings to the target format (e.g. YYYY-MM-DDT00:00:00.000Z).\nTo prevent non-date columns (like percentage, age, IDs) from being incorrectly converted to dates:\n1. If a value is a float/integer, do NOT convert it to an Excel serial date unless the column header name (key) contains one of these date-related keywords: 'date', 'dos', 'dob', 'time', 'sowing', 'pruning', or 'harvest' (case-insensitive). For other numeric columns (like age, percentages, count), leave them as floats/integers.\n2. For string values, if they contain '-' or '/' or fit standard date/time patterns, parse and format them into the ISO target format.\n3. Implement this safeguard directly within the excel_to_iso_date helper function by accepting both the value and optional/required key name, e.g. `def excel_to_iso_date(val, col_name=None):` and testing if `col_name` implies it's a date before converting numeric serial numbers. Import 'datetime' and 'timedelta' from 'datetime' package to do this."
+    
+    # Python Quote Compatibility Guideline (PEP 701)
+    prompt += "\n\nCRITICAL PYTHON COMPATIBILITY REQUIREMENT:\n- Python 3.10 Compatibility: Reusing the same quote character inside an f-string expression (e.g. f'error: {result[\\'message\\']}') is a SyntaxError in Python 3.11 and older. ALWAYS alternate quote characters (e.g. use double quotes for the outer f-string f\"error: {result[\\'message\\']}\", or use double quotes for the inner key f\'error: {result[\"message\"]}\') to prevent SyntaxError: f-string: unmatched \'[\'. Apply this rule globally to all f-string statements, log prints, dictionary assignments, and error messages."
     
     # Add explicit import syntax requirements to prevent AI confusion
     prompt += "\n\nCRITICAL IMPORT SYNTAX - Use EXACTLY these import statements:"
@@ -215,13 +221,23 @@ def generate_script(description, is_multithreaded=True, input_columns=None, allo
     if is_multithreaded:
         prompt += "\n\nCRITICAL THREAD SAFETY: If you use module-level caches (e.g., _geocode_cache = {}), YOU MUST USE A LOCK for thread-safe access to PREVENT data corruption and runtime errors. Use 'thread_utils.create_lock()' at the module level to create a lock. Example: `_lock = thread_utils.create_lock()`. Then pulse 'with _lock:' whenever you read/write to the cache dict inside process_row."
     
+    prompt += "\n\nCRITICAL OUTPUT REQUIREMENT: The script logic MUST populate the output 'row' dictionary with the correct keys."
     if output_config and output_config.get('isDynamicUI'):
         ui_mapping = output_config.get('uiMapping', [])
-        prompt += "\n\nCRITICAL OUTPUT REQUIREMENT: The script logic MUST populate the output 'row' dictionary with the following keys exactly as specified:"
+        prompt += "\nFor the UI Progress grid, ensure these keys exist exactly as specified:"
         for m in ui_mapping:
              prompt += f"\n- Key '{m['colName']}': {m['logic']} (Source Value: {m['value']})"
         prompt += "\nEnsure these keys exist in the 'row' dictionary returned by process_row. Do not output 'Name', 'Code', 'Response' unless explicitly asked."
         prompt += "\nCRITICAL: Do NOT create duplicate output keys with minor variations (e.g. 'Farmer ID' and 'FarmerID'). If 'Farmer ID' is required by the UI and mentioned in input columns, use ONLY that key. Do not add 'FarmerID' as a separate key."
+
+    if output_columns:
+        if isinstance(output_columns, str):
+            out_cols_list = [c.strip() for c in output_columns.split(',') if c.strip()]
+        else:
+            out_cols_list = output_columns
+        prompt += "\nFor the Excel Results Sheet, ensure these output keys are populated in the 'row' dictionary exactly as specified:"
+        for col in out_cols_list:
+            prompt += f"\n- Key '{col}': Populated when the description instructs to write/record to this column name."
 
     prompt += """\n\nCRITICAL LOGGING REQUIREMENTS:
 1. SUPPORT APIs (User lookup, Geofence, Master data) - MUST ALWAYS LOG:
@@ -240,6 +256,7 @@ def generate_script(description, is_multithreaded=True, input_columns=None, allo
    - Keep log output concise but informative
    - Always log the outcome of lookups (found/not found)
    - Always log coordinates from geofence calls
+   - Python 3.10 Compatibility: Reusing the same quote character inside an f-string expression (e.g. f'Farmer not found: {result['message']}') is a SyntaxError in Python 3.10. ALWAYS alternate quote characters (e.g. use double quotes inside single-quoted f-strings: f'Farmer not found: {result["message"]}', or use triple quotes/regular formatting).
 
 2. CRITICAL PAYLOAD HANDLING (Multipart/DTO vs JSON):
    - CHECK if the API Step URL or Description implies a Multipart/DTO upload (vs standard JSON).
@@ -318,7 +335,8 @@ def generate_script(description, is_multithreaded=True, input_columns=None, allo
 3. CRITICAL SUCCESS CONDITION:
    - APIs may return 200 (OK) or 201 (Created) for success.
    - ALWAYS check `if response.ok:` or `if response.status_code in [200, 201]:`.
-   - ❌ DO NOT check `if response.status_code == 200:` (This causes false failures for 201)."""
+   - ❌ DO NOT check `if response.status_code == 200:` (This causes false failures for 201).
+   - Safe Nested Dictionary Access: When extracting nested fields from API responses (which might contain null/None values, e.g. `'auditedArea': null`), ALWAYS use `(response_dict.get('key') or {}).get('nested_key')` instead of `response_dict.get('key', {}).get('nested_key')`, to prevent AttributeError on NoneType objects."""
     
     prompt += """
 
@@ -340,7 +358,7 @@ CRITICAL URL HANDLING: When constructing API URLs using env_config apiBaseUrl, d
     # ALWAYS add Master Search instructions - these are CRITICAL for any data lookup
     prompt += """\n\nCRITICAL MASTER SEARCH REQUIREMENTS:
 🚨 FORBIDDEN: DO NOT write custom API calls for user, farmer, soiltype, irrigationtype, or any master data lookups.
-You MUST use the master_search component for ALL master data lookups.
+You MUST use the master_search component for ALL master data lookups, UNLESS a step explicitly specifies to use a provided ID directly (e.g. "attribute 'assignedTo.id' using column 'AssignedTo User ID'") and there is no MASTER lookup step defined for that entity. In that case, map the column's value directly to the payload's ID field (e.g. `row.get('AssignedTo User ID')`) and do NOT call or import master_search. If a name field is also needed by the payload but not provided in the columns, use a placeholder name like `f"User_{assigned_to_user_id}"` or `None`.
 
 1. IMPORT: Add 'import components.master_search as master_search' at the top
 
@@ -355,10 +373,11 @@ You MUST use the master_search component for ALL master data lookups.
    - You MUST define these at the very top of your script, after imports.
    - For "search" mode masters (user, farmer): Create empty cache dict
      Example: _user_cache = {}
-   - For "once" mode masters (soiltype, irrigationtype): Fetch all data
-     CRITICAL: Use a consistent naming pattern: `_{master_type}_list`
-     Example: _soiltype_list = master_search.fetch_all('soiltype', builtins.env_config)
-   - 🚨 FORBIDDEN: DO NOT initialize these inside the `run()` or `process_row()` functions. They must be GLOBAL.
+    - For "once" mode masters (soiltype, irrigationtype): Fetch all data
+      CRITICAL: Use a consistent naming pattern: `_{master_type}_list`
+      Example: _soiltype_list = master_search.fetch_all('soiltype', builtins.env_config)
+      CRITICAL RETURN TYPE WARNING: master_search.fetch_all() returns a flat python list (e.g. `[item1, item2, ...]`). It is NOT a dictionary. DO NOT call `.get('items')` or `.get('data')` or access `['count']` on the returned list. If checking whether the fetch was successful/not empty, use `if not _soiltype_list:`.
+    - 🚨 FORBIDDEN: DO NOT initialize these inside the `run()` or `process_row()` functions. They must be GLOBAL.
 
 4. LOOKUP PATTERN (inside process_row function):
    6. MANDATORY LOGIC REPLACEMENT (SEARCH mode - ALL MASTER TYPES):
@@ -432,8 +451,11 @@ You MUST use the master_search component for ALL master data lookups.
    - Initialize the bypass flag at the START of run() function, NOT inside process_row()
    
    For ONCE mode (soiltype, irrigationtype):
+   CRITICAL RETURN TYPE WARNING: master_search.fetch_all() returns a flat python list (e.g. `[item1, item2, ...]`). It is NOT a dictionary. DO NOT call `.get('items')` or `.get('data')` or access `['count']` on the returned list. If checking whether the fetch was successful/not empty, use `if not _soiltype_list:` (do NOT check `.get('items')`).
+
    ```python
    # Use the exact variable name defined at module level (e.g. _soiltype_list)
+   # _soiltype_list must be a list
    result = master_search.lookup_from_cache(_soiltype_list, 'name', row.get('SoilType'), 'id')
    if not result['found']:
        row['Status'] = 'Fail'
@@ -576,16 +598,22 @@ When the user specifies a GEO Step (address geocoding/geofencing), follow these 
     
     return f"{header}\n{content}" if success else f"# error: {err}\n{generate_heuristic_script(description)}"
 
-def update_script_with_ai(existing_code, description, is_multithreaded=True, input_columns=None, allow_additional_attributes=False, enable_geofencing=False, output_config=None):
+def update_script_with_ai(existing_code, description, is_multithreaded=True, input_columns=None, allow_additional_attributes=False, enable_geofencing=False, output_config=None, output_columns=None):
     api_key = get_gemini_api_key()
     if not api_key: return "# API Key missing"
     
     code = sanitize_code(clean_ai_headers(existing_code))
     
     prompt = f"Refactor this code to match the NEW description exactly.\n\nNEW DESCRIPTION:\n{description}\n\nEXISTING CODE:\n```python\n{code}\n```\n\nCRITICAL INSTRUCTIONS:\n1. The Description is the SOURCE OF TRUTH. Steps in the code that are NOT in the description MUST be REMOVED.\n2. Specifically, if an API call or logic block exists in the code but is not mentioned in the description, DELETE IT.\n3. Preserve helper functions, imports, and error handling.\n4. Update variable references as needed."
-    prompt += "\n\nCRITICAL BEST PRACTICES:\n- Robust JSON Parsing: API responses might be a list `[...]` or a dict `{'data': [...]}`. Handle both cases. Example: `data = resp.json(); items = data if isinstance(data, list) else data.get('data', [])`\n- Robust String Matching: ALWAYS `.strip()` and `.lower()` when comparing strings (e.g. from Excel vs API) to avoid whitespace mismatches.\n- Error Handling: Do NOT use empty `except: pass`. Print error messages if setup steps fail.\n- URL Construction: Do NOT use `urljoin` if the second argument starts with `/` (e.g. `urljoin(base, '/api')`), as it modifies the base URL path. Reuse `base_url` directly with f-strings or strip leading slashes.\n- Environment Config: Use `env_config.get('apiBaseUrl')` as the primary key for the base URL."
-    if allow_additional_attributes: prompt += "\nNOTE: 'Allow Additional Attributes' is ENABLED. The script executor now handles this AUTOMATICALLY via payload interception. You can remove manual attribute_utils calls if they exist, or just leave them. Focus on the core API logic."
+    prompt += "\n\nCRITICAL BEST PRACTICES:\n- Robust JSON Parsing: API responses might be a list `[...]` or a dict `{'data': [...]}`. Handle both cases. Example: `data = resp.json(); items = data if isinstance(data, list) else data.get('data', [])`\n- Robust String Matching: ALWAYS `.strip()` and `.lower()` when comparing strings (e.g. from Excel vs API) to avoid whitespace mismatches.\n- Error Handling: Do NOT use empty `except: pass`. Print error messages if setup steps fail.\n- URL Construction: Do NOT use `urljoin` if the second argument starts with `/` (e.g. `urljoin(base, '/api')`), as it modifies the base URL path. Reuse `base_url` directly with f-strings or strip leading slashes.\n- Environment Config: Use `env_config.get('apiBaseUrl')` as the primary key for the base URL.\n- Safe Nested Dictionary Access: When extracting nested fields from API responses (which might contain null/None values, e.g. `'auditedArea': null`), ALWAYS use `(response_dict.get('key') or {}).get('nested_key')` instead of `response_dict.get('key', {}).get('nested_key')`, to prevent AttributeError on NoneType objects.`"
+    if allow_additional_attributes: prompt += "\nNOTE: 'Allow Additional Attributes' is ENABLED. The script executor handles this AUTOMATICALLY via payload interception. However, if the description explicitly instructs to manually extract, merge, or replace additional attributes (e.g. step-by-step logic), you MUST write the explicit merging logic inside the Python script's process_row. To do this, write native Python code to iterate over the keys in the excel 'row' dictionary, skip the standard input/output columns (e.g. input columns like 'Farmer Name', 'Farmer ID' or 'Asset Name', 'Asset ID', and outputs like 'Status', 'Response'), and copy/overwrite all other custom columns and their values directly into payload['data'] (cast values to string if necessary). ❌ DO NOT use 'attribute_utils.add_attributes_to_payload' or any other function from 'components.attribute_utils' for this manual merging, as it might return early if the runtime UI checkbox is disabled."
     if enable_geofencing: prompt += "\nCRITICAL UPDATE: Dynamic Geofencing is ENABLED. Replace any existing hardcoded polygon logic (e.g. INDIA_POLY) with 'geofence_utils.check_geofence(lat, lon, env_config.get('targetLocation'), env_config.get('Geocoding_api_key'), cache=geo_cache)'. Ensure 'geofence_utils_v2 as geofence_utils' is imported."
+    
+    # Date Handling Guideline
+    prompt += "\n\nCRITICAL DATE HANDLING REQUIREMENT:\nIf any input column represents a Date (such as sowingDate, Date of Sowing, Date, etc.) or if the description specifies mapping a date from Excel, Excel might parse it as a numeric serial number (e.g. 46218 for 2026-07-15). You MUST generate a date helper function in the script to convert Excel serial dates and standard date strings to the target format (e.g. YYYY-MM-DDT00:00:00.000Z).\nTo prevent non-date columns (like percentage, age, IDs) from being incorrectly converted to dates:\n1. If a value is a float/integer, do NOT convert it to an Excel serial date unless the column header name (key) contains one of these date-related keywords: 'date', 'dos', 'dob', 'time', 'sowing', 'pruning', or 'harvest' (case-insensitive). For other numeric columns (like age, percentages, count), leave them as floats/integers.\n2. For string values, if they contain '-' or '/' or fit standard date/time patterns, parse and format them into the ISO target format.\n3. Implement this safeguard directly within the excel_to_iso_date helper function by accepting both the value and optional/required key name, e.g. `def excel_to_iso_date(val, col_name=None):` and testing if `col_name` implies it's a date before converting numeric serial numbers. Import 'datetime' and 'timedelta' from 'datetime' package to do this."
+    
+    # Python Quote Compatibility Guideline (PEP 701)
+    prompt += "\n\nCRITICAL PYTHON COMPATIBILITY REQUIREMENT:\n- Python 3.10 Compatibility: Reusing the same quote character inside an f-string expression (e.g. f'error: {result[\\'message\\']}') is a SyntaxError in Python 3.11 and older. ALWAYS alternate quote characters (e.g. use double quotes for the outer f-string f\"error: {result[\\'message\\']}\", or use double quotes for the inner key f\'error: {result[\"message\"]}\') to prevent SyntaxError: f-string: unmatched \'[\'. Apply this rule globally to all f-string statements, log prints, dictionary assignments, and error messages."
     
     # Add explicit import syntax requirements
     has_master_search = "[Master Search]" in description or "[MASTER SEARCH]" in description.upper()
@@ -601,12 +629,22 @@ def update_script_with_ai(existing_code, description, is_multithreaded=True, inp
     if has_master_search:
         prompt += "\nimport components.master_search as master_search  # NOT 'from components import master_search'"
     
+    prompt += "\n\nCRITICAL OUTPUT REQUIREMENT: Ensure the script produces a dictionary (row) with the correct keys."
     if output_config and output_config.get('isDynamicUI'):
         ui_mapping = output_config.get('uiMapping', [])
-        prompt += "\n\nCRITICAL OUTPUT REQUIREMENT: Ensure the script produces a dictionary (row) with the following keys:"
+        prompt += "\nFor the UI Progress grid, ensure these keys exist exactly as specified:"
         for m in ui_mapping:
              prompt += f"\n- '{m['colName']}': {m['logic']} (Source: {m['value']})"
         prompt += "\nCRITICAL: Do NOT create duplicate output keys with minor variations (e.g. 'Farmer ID' and 'FarmerID'). If 'Farmer ID' is required by the UI, use ONLY that key. Do not add 'FarmerID' as a separate key."
+
+    if output_columns:
+        if isinstance(output_columns, str):
+            out_cols_list = [c.strip() for c in output_columns.split(',') if c.strip()]
+        else:
+            out_cols_list = output_columns
+        prompt += "\nFor the Excel Results Sheet, ensure these output keys are populated in the 'row' dictionary exactly as specified:"
+        for col in out_cols_list:
+            prompt += f"\n- '{col}': Populated when the description instructs to write/record to this column name."
              
     prompt += """\n\nCRITICAL LOGGING REQUIREMENTS:
 1. SUPPORT APIs (User lookup, Geofence, Master data) - MUST ALWAYS LOG:
@@ -625,6 +663,7 @@ def update_script_with_ai(existing_code, description, is_multithreaded=True, inp
    - Keep log output concise but informative
    - Always log the outcome of lookups (found/not found)
    - Always log coordinates from geofence calls
+   - Python 3.10 Compatibility: Reusing the same quote character inside an f-string expression (e.g. f'Farmer not found: {result['message']}') is a SyntaxError in Python 3.10. ALWAYS alternate quote characters (e.g. use double quotes inside single-quoted f-strings: f'Farmer not found: {result["message"]}', or use triple quotes/regular formatting).
 
 2. CRITICAL PAYLOAD HANDLING (Multipart/DTO vs JSON):
    - CHECK if the API Step URL or Description implies a Multipart/DTO upload (vs standard JSON).
@@ -691,7 +730,7 @@ def update_script_with_ai(existing_code, description, is_multithreaded=True, inp
     # ALWAYS add Master Search instructions - CRITICAL for any data lookup
     prompt += """\n\nCRITICAL MASTER SEARCH UPDATE:
 🚨 FORBIDDEN: DO NOT write custom API calls for user, farmer, soiltype, irrigationtype, or any master data lookups.
-You MUST use the master_search component for ALL master data lookups.
+You MUST use the master_search component for ALL master data lookups, UNLESS a step explicitly specifies to use a provided ID directly (e.g. "attribute 'assignedTo.id' using column 'AssignedTo User ID'") and there is no MASTER lookup step defined for that entity. In that case, map the column's value directly to the payload's ID field (e.g. `row.get('AssignedTo User ID')`) and do NOT call or import master_search. If a name field is also needed by the payload but not provided in the columns, use a placeholder name like `f"User_{assigned_to_user_id}"` or `None`.
 
 1. IMPORT: Ensure 'import components.master_search as master_search' is at the top
 3. INITIALIZE CACHES (🚨 MODULE LEVEL ONLY - TOP OF SCRIPT):
@@ -832,8 +871,9 @@ if __name__ == "__main__":
         attr = data.get('allowAdditionalAttributes', False)
         geo = data.get('enableGeofencing', False)
         out_conf = data.get('outputConfig', None)
+        out_cols = data.get('outputColumns', '')
         
-        if ex_code: print(json.dumps({"status":"success", "script": update_script_with_ai(ex_code, desc, mt, cols, attr, geo, out_conf)}))
-        else: print(json.dumps({"status":"success", "script": generate_script(desc, mt, cols, attr, geo, out_conf)}))
+        if ex_code: print(json.dumps({"status":"success", "script": update_script_with_ai(ex_code, desc, mt, cols, attr, geo, out_conf, out_cols)}))
+        else: print(json.dumps({"status":"success", "script": generate_script(desc, mt, cols, attr, geo, out_conf, out_cols)}))
     except Exception as e:
         print(json.dumps({"status":"error", "message":str(e)}))

@@ -301,7 +301,7 @@ def run(data, token, env_config):
                      del_stat = resp_json.get('status', 'Queued')
                 df_in.at[idx, 'deletion status'] = del_stat
                 
-                print(f'    ✔️ Delete queued. Request Id: {req_id or 'N/A'}')
+                print(f"    ✔️ Delete queued. Request Id: {req_id or 'N/A'}")
             else:
                 df_in.at[idx, 'deletion response'] = f'Error {resp.status_code}: {resp.text}'
                 df_in.at[idx, 'deletion status'] = 'Delete Failed'

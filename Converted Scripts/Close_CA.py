@@ -1,8 +1,8 @@
-# CONFIG: isMultithreaded = True
-# CONFIG: batchSize = 5
+# CONFIG: isMultithreaded = False
+# CONFIG: batchSize = 1
 # CONFIG: enableGeofencing = False
 # CONFIG: allowAdditionalAttributes = False
-# EXPECTED_INPUT_COLUMNS: Farmer Name, Farmer ID, Tag Name
+# EXPECTED_INPUT_COLUMNS: CA Name, CA ID, Reason for Closing
 
 def run(data, token, env_config):
     import pandas as pd
@@ -12,9 +12,9 @@ def run(data, token, env_config):
     import json
     import requests
     import json
-    import thread_utils
     import builtins
-    from datetime import datetime, timedelta
+    import datetime
+    from datetime import timedelta
     import components.master_search as master_search
 
     def _log_req(method, url, **kwargs):
@@ -226,136 +226,102 @@ def run(data, token, env_config):
     builtins.wk = wk
     builtins.wb = wk
     wb = wk
-    global _farmertag_list
-    _farmertag_list = []
 
     def excel_to_iso_date(val, col_name=None):
-        """
-    Converts Excel serial dates (numbers) or standard date strings to ISO 8601 format (YYYY-MM-DDTHH:MM:SS.000Z).
-    Prevents conversion for non-date numeric columns.
-    """
         if val is None or val == '':
             return None
         date_keywords = ['date', 'dos', 'dob', 'time', 'sowing', 'pruning', 'harvest']
-        is_date_column = col_name and any((keyword in col_name.lower() for keyword in date_keywords))
+        is_date_col = False
+        if col_name:
+            lower_col = str(col_name).lower()
+            is_date_col = any((kw in lower_col for kw in date_keywords))
         if isinstance(val, (int, float)):
-            if is_date_column:
+            if not is_date_col:
+                return val
+            base_date = datetime.datetime(1899, 12, 30)
+            delta = timedelta(days=val)
+            target_date = base_date + delta
+            return target_date.strftime('%Y-%m-%dT00:00:00.000Z')
+        val_str = str(val).strip()
+        if '-' in val_str or '/' in val_str:
+            for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%Y/%m/%d', '%d/%m/%Y', '%Y-%m-%d %H:%M:%S', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%dT%H:%M:%S.000Z'):
                 try:
-                    dt = datetime(1899, 12, 30) + timedelta(days=val)
-                    return dt.isoformat(timespec='milliseconds') + 'Z'
-                except Exception:
-                    pass
-            return val
-        if isinstance(val, str):
-            val = val.strip()
-            if not val:
-                return None
-            date_formats = ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%m/%d/%Y %H:%M:%S', '%m/%d/%Y', '%d-%m-%Y %H:%M:%S', '%d-%m-%Y']
-            for fmt in date_formats:
-                try:
-                    dt = datetime.strptime(val, fmt)
-                    return dt.isoformat(timespec='milliseconds') + 'Z'
+                    dt = datetime.datetime.strptime(val_str, fmt)
+                    return dt.strftime('%Y-%m-%dT00:00:00.000Z')
                 except ValueError:
                     continue
-        return val
+        return val_str
 
     def _user_run(data, token, env_config):
-        """
-    Main function to orchestrate the processing of rows in parallel.
-    """
-        global _farmertag_list
-        with _lock:
-            if not _farmertag_list:
-                print('[FARMER_TAG_MASTER] Fetching all farmer tags...')
-                _farmertag_list = master_search.fetch_all('farmertag', env_config)
-                if not _farmertag_list:
-                    print('[FARMER_TAG_MASTER] No farmer tags found or failed to fetch.')
-                else:
-                    print(f'[FARMER_TAG_MASTER] Fetched {len(_farmertag_list)} farmer tags.')
-        return thread_utils.run_in_parallel(process_func=process_row, items=data, token=token, env_config=env_config)
+        builtins.token = token
+        builtins.env_config = env_config
+        results = []
+        for row in data:
+            processed_row = process_row(row)
+            results.append(processed_row)
+        return results
 
     def process_row(row):
-        """
-    Processes a single row of data to add a farmer tag.
-    """
-        env_config = builtins.env_config
-        headers = {'Authorization': f'Bearer {token}'}
-        row['Farmer Name'] = row.get('Farmer Name')
-        row['Farmer ID'] = row.get('Farmer ID')
-        row['Tag Name'] = row.get('Tag Name')
-        row['Status'] = 'Fail'
-        row['Response'] = ''
-        row['Tag ID'] = ''
-        farmer_id = row.get('Farmer ID')
-        tag_name = row.get('Tag Name')
-        if not farmer_id:
-            row['Response'] = 'Farmer ID is missing.'
-            return row
-        if not tag_name:
-            row['Response'] = 'Tag Name is missing.'
-            return row
-        with _lock:
-            tag_lookup_result = master_search.lookup_from_cache(_farmertag_list, 'name', tag_name, 'id')
-        if not tag_lookup_result['found']:
+        reason_for_closing = str(row.get('Reason for Closing', '')).strip()
+        if not reason_for_closing:
+            reason_for_closing = 'Others'
+            print(f"[MASTER_SEARCH] Reason for Closing is empty, defaulting to 'Others'")
+        if not _closePlotReason_list:
             row['Status'] = 'Fail'
-            row['Response'] = tag_lookup_result['message'] or 'Tag not found'
-            print(f'[FARMER_TAG_MASTER] {tag_name} → ID: Not Found')
+            row['Response'] = 'Master data list for closePlotReason is empty'
+            print(f'[MASTER_SEARCH] closePlotReason → List is empty')
             return row
-        tag_id = tag_lookup_result['value']
-        row['Tag ID'] = tag_id
-        print(f'[FARMER_TAG_MASTER] {tag_name} → ID: {tag_id}')
-        fetch_farmer_url = f'{base_url}/services/farm/api/farmers/{farmer_id}'
+        lookup_result = master_search.lookup_from_cache(_closePlotReason_list, 'name', reason_for_closing, 'id')
+        if not lookup_result.get('found'):
+            row['Status'] = 'Fail'
+            row['Response'] = lookup_result.get('message', f"Reason for Closing '{reason_for_closing}' not found in master data.")
+            print(f'[MASTER_SEARCH] {reason_for_closing} → ID: Not Found')
+            return row
+        reason_for_closing_id = lookup_result.get('value')
+        print(f'[MASTER_SEARCH] {reason_for_closing} → ID: {reason_for_closing_id}')
+        row['Reason for Closing_id'] = reason_for_closing_id
+        ca_id = row.get('CA ID')
+        if not ca_id:
+            row['Status'] = 'Fail'
+            row['Response'] = 'CA ID is missing'
+            return row
+        api_base = env_config.get('apiBaseUrl')
+        url = f'{api_base}/services/farm/api/croppable-areas/closed'
+        params = {'ids': ca_id, 'reasonId': reason_for_closing_id}
+        headers = {'Authorization': f'Bearer {builtins.token}', 'Accept': 'application/json'}
         try:
-            fetch_resp = _log_get(fetch_farmer_url, headers=headers)
-            if not fetch_resp.ok:
-                row['Response'] = f'Failed to fetch farmer details: {fetch_resp.status_code} - {fetch_resp.text}'
-                return row
-            farmer_data = fetch_resp.json()
-            print(f'[API_DEBUG] Fetched farmer {farmer_id} details successfully.')
-        except requests.exceptions.RequestException as e:
-            row['Response'] = f'API request failed while fetching farmer details: {e}'
-            return row
-        except json.JSONDecodeError:
-            row['Response'] = f'Failed to decode JSON from farmer details API: {fetch_resp.text}'
-            return row
-        current_tags = (farmer_data.get('data') or {}).get('tags', [])
-        if not isinstance(current_tags, list):
-            current_tags = []
-        current_tags = [t for t in current_tags if isinstance(t, int)]
-        updated_tags = list(current_tags)
-        tag_added = False
-        if tag_id not in updated_tags:
-            updated_tags.append(tag_id)
-            farmer_data['data']['tags'] = updated_tags
-            tag_added = True
-            print(f"[LOGIC] Tag {tag_id} ('{tag_name}') added to farmer's tag list.")
-        else:
-            row['Status'] = 'Pass'
-            row['Response'] = 'Tag already associated with farmer'
-            print(f"[LOGIC] Tag {tag_id} ('{tag_name}') already associated with farmer {farmer_id}. Skipping update.")
-            return row
-        update_farmer_url = f'{base_url}/services/farm/api/farmers'
-        payload_data = farmer_data
-        files = {'dto': (None, json.dumps(payload_data), 'application/json')}
-        try:
-            put_resp = _log_put(update_farmer_url, headers=headers, files=files)
-            if put_resp.ok:
-                row['Status'] = 'Pass'
-                row['Response'] = 'Tag updated to farmer'
-                print(f'[API_DEBUG] Farmer {farmer_id} tags updated successfully with tag {tag_id}.')
+            response = _log_get(url, params=params, headers=headers)
+            if response.ok:
+                resp_data = response.json()
+                status_matched = False
+                if isinstance(resp_data, list) and len(resp_data) > 0:
+                    first_item = resp_data[0]
+                    ca_status = str(first_item.get('status', '')).strip().lower()
+                    if ca_status == 'closed':
+                        status_matched = True
+                elif isinstance(resp_data, dict):
+                    ca_status = str(resp_data.get('status', '')).strip().lower()
+                    if ca_status == 'closed':
+                        status_matched = True
+                row['CA Name'] = row.get('CA Name')
+                row['CA ID'] = ca_id
+                if status_matched:
+                    row['Status'] = 'Success'
+                    row['Close Status'] = 'Success'
+                else:
+                    row['Status'] = 'Fail'
+                    row['Close Status'] = 'Failed'
+                    row['Response'] = f'API response status is not closed. Received status: {resp_data}'
             else:
                 row['Status'] = 'Fail'
-                row['Response'] = f'Failed to update farmer tags: {put_resp.status_code} - {put_resp.text}'
-                print(f'[API_DEBUG] Failed to update farmer {farmer_id} tags: {put_resp.status_code} - {put_resp.text}')
-        except requests.exceptions.RequestException as e:
+                row['Close Status'] = 'Failed'
+                row['Response'] = f'API Error: {response.status_code} - {response.text}'
+        except Exception as e:
             row['Status'] = 'Fail'
-            row['Response'] = f'API request failed while updating farmer tags: {e}'
-        except json.JSONDecodeError:
-            row['Status'] = 'Fail'
-            row['Response'] = f'Failed to decode JSON from farmer update API: {put_resp.text}'
+            row['Close Status'] = 'Failed'
+            row['Response'] = f'Exception occurred during API call: {str(e)}'
         return row
-    "\nOUTPUT MAPPING CONFIGURATION:\n- UI Output Definition:\n- UI Column 'Farmer Name': Set to '' (Logic: from excel)\n- UI Column 'Farmer ID': Set to '' (Logic: from excel)\n- UI Column 'Tag Name': Set to '' (Logic: from excel)\n- UI Column 'Status': Set to '' (Logic: Pass if farmer update API status code is 200 or 201, else Fail)\n- Excel Output Definition:\n   - Column 'Tag ID': Set to '' (Logic: attribute 'id' from tag API response)\n   - Column 'Status': Set to '' (Logic: 'Fail' if tag not found or if status code of farmer update is not 200\n'Pass' if status of farmer update is 200 or 201)\n   - Column 'Response': Set to '' (Logic: 'Tag not found' if tag not found or \nwhole response of farmer update if status code is not 200\n'Tag updated to farmer' if farmer update response code is 200 or 201)\n"
-    _lock = thread_utils.create_lock()
+    _closePlotReason_list = master_search.fetch_all('closePlotReason', builtins.env_config)
     res = _user_run(data, token, env_config)
     try:
         if res is None and hasattr(builtins, 'data_df'):

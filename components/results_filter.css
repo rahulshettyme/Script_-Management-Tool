@@ -1,0 +1,201 @@
+/**
+ * RESULTS FILTER — Shared Styles (results_filter.css)
+ * =====================================================
+ * PROJECT RULE: All results tables in QA-Ops Workbench use this stylesheet.
+ * Light theme is default (createbulkdata.html).
+ * Apply `.rf-dark` to `.rf-filter-bar` for the dark onboarding theme.
+ */
+
+/* ── Filter Bar ──────────────────────────────────────────────────────── */
+.rf-filter-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 8px 10px;
+    margin-bottom: 0;
+    background: #f8f9fa;
+    border: 1px solid #e0e0e0;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    flex-wrap: wrap;
+}
+
+.rf-filter-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex: 1;
+}
+
+.rf-filter-icon {
+    font-size: 0.85rem;
+    color: #8898aa;
+    flex-shrink: 0;
+}
+
+/* Column dropdown */
+select.rf-column-select {
+    padding: 4px 8px !important;
+    border: 1px solid #dadce0 !important;
+    border-radius: 4px !important;
+    background: #ffffff !important;
+    color: #264554 !important;
+    font-size: 0.82rem !important;
+    cursor: pointer !important;
+    outline: none !important;
+    transition: border-color 0.15s !important;
+    min-width: 120px !important;
+    box-shadow: none !important;
+    appearance: auto !important;
+    background-image: none !important;
+}
+select.rf-column-select:focus {
+    border-color: #28a745 !important;
+}
+
+/* Text search input */
+input[type="text"].rf-text-input {
+    flex: 1;
+    min-width: 180px;
+    padding: 4px 10px !important;
+    border: 1px solid #dadce0 !important;
+    border-radius: 4px !important;
+    background: #ffffff !important;
+    color: #264554 !important;
+    font-size: 0.82rem !important;
+    outline: none !important;
+    transition: border-color 0.15s !important;
+    box-shadow: none !important;
+    box-sizing: border-box !important;
+}
+input[type="text"].rf-text-input:focus {
+    border-color: #28a745 !important;
+}
+input[type="text"].rf-text-input::placeholder {
+    color: #aab0bb !important;
+}
+
+/* Clear button */
+.rf-clear-btn {
+    background: transparent;
+    border: 1px solid #dadce0;
+    border-radius: 4px;
+    color: #8898aa;
+    font-size: 0.78rem;
+    padding: 4px 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.rf-clear-btn:hover {
+    background: #f0f0f0;
+    color: #d93025;
+    border-color: #d93025;
+}
+
+/* Row count badge */
+.rf-count-badge {
+    font-size: 0.78rem;
+    color: #8898aa;
+    font-weight: 500;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.rf-count-badge.rf-count--filtered {
+    color: #1976d2;
+    font-weight: 700;
+}
+
+/* ── Dark Theme Modifier ─────────────────────────────────────────────── */
+.rf-filter-bar.rf-dark {
+    background: rgba(30, 41, 59, 0.6);
+    border-color: #334155;
+}
+/* Removed dark styles for selector and search text input to enforce light theme matching columns */
+.rf-filter-bar.rf-dark .rf-clear-btn {
+    border-color: #475569;
+    color: #64748b;
+}
+.rf-filter-bar.rf-dark .rf-clear-btn:hover {
+    background: rgba(239, 68, 68, 0.1);
+    color: #f87171;
+    border-color: #f87171;
+}
+.rf-filter-bar.rf-dark .rf-filter-icon {
+    color: #64748b;
+}
+.rf-filter-bar.rf-dark .rf-count-badge {
+    color: #64748b;
+}
+.rf-filter-bar.rf-dark .rf-count-badge.rf-count--filtered {
+    color: #818cf8;
+}
+
+/* ── Smart Download Dropdown ─────────────────────────────────────────── */
+.rf-download-group {
+    display: flex;
+    align-items: stretch;
+    position: relative;
+    gap: 0;
+    width: 100%;
+}
+
+select.rf-download-select {
+    display: inline-block;
+    width: 100%;
+    padding: 0.75rem 1.5rem !important;
+    font-size: 0.9rem !important;
+    font-weight: 500 !important;
+    color: white !important;
+    border: none !important;
+    border-radius: 4px !important;
+    cursor: pointer !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1) !important;
+    transition: all 0.2s !important;
+    text-align: center !important;
+    text-align-last: center !important;
+    outline: none !important;
+    -webkit-appearance: none !important;
+    -moz-appearance: none !important;
+    appearance: none !important;
+    box-sizing: border-box !important;
+}
+
+/* Green select for production */
+select.rf-download-select.production {
+    background: #28a745 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>') no-repeat right 1.25rem center !important;
+    background-size: 1rem !important;
+    padding-right: 2.5rem !important;
+}
+
+/* Blue select for onboarding */
+select.rf-download-select.onboarding {
+    background: #0ea5e9 url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>') no-repeat right 1.25rem center !important;
+    background-size: 1rem !important;
+    padding-right: 2.5rem !important;
+}
+
+/* Hover effects */
+select.rf-download-select.production:hover {
+    background-color: #218838 !important;
+}
+select.rf-download-select.onboarding:hover {
+    background-color: #0284c7 !important;
+}
+
+/* Style select options to look clean */
+select.rf-download-select option {
+    background-color: #ffffff !important;
+    color: #264554 !important;
+    padding: 8px !important;
+    font-size: 0.85rem !important;
+    text-align: left !important;
+}
+
+/* Ensure hidden class works on the group wrapper */
+.rf-download-group.hidden {
+    display: none !important;
+}

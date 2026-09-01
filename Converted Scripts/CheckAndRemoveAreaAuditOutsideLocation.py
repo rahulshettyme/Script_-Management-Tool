@@ -323,7 +323,7 @@ def run(data, token, env_config):
 
         def _user_run(data, token, env_config):
             target_location = env_config.get('targetLocation')
-            google_api_key = env_config.get('google_api_key')
+            google_api_key = env_config.get('Geocoding_api_key')
             geo_cache = {}
             for row in data:
                 row.setdefault('is_outside_location', '')
@@ -373,7 +373,7 @@ def run(data, token, env_config):
                             ui_status = 'Fail'
                             api_response_detail = f"HTTP Status: {http_status_code} | Expected 'cropAudited' field missing or invalid."
                             if response_json.get('message'):
-                                api_response_detail += f' Message: {response_json.get('message')}'
+                                api_response_detail += f" Message: {response_json.get('message')}"
                             elif response.text:
                                 api_response_detail += f' Response Body: {response.text[:100]}...'
                             row['area_audit_api_response'] = api_response_detail
@@ -383,9 +383,9 @@ def run(data, token, env_config):
                             ui_status = 'Fail'
                             api_response_detail = f'HTTP Status: {http_status_code}'
                             if response_json.get('message'):
-                                api_response_detail += f' | Message: {response_json.get('message')}'
+                                api_response_detail += f" | Message: {response_json.get('message')}"
                             elif response_json.get('title'):
-                                api_response_detail += f' | Title: {response_json.get('title')}'
+                                api_response_detail += f" | Title: {response_json.get('title')}"
                             elif response.text and (not response_json):
                                 api_response_detail += f' | Response Body: {response.text[:100]}...'
                             row['area_audit_api_response'] = api_response_detail

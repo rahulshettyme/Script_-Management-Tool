@@ -10,6 +10,13 @@
  */
 
 // State
+window.isExecutionActive = false;
+window.addEventListener('beforeunload', function(e) {
+    if (window.isExecutionActive) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
+});
 let authToken = null;
 let currentEnvironment = null;
 let currentTenant = null;
@@ -17,9 +24,14 @@ let selectedDataType = null;
 let uploadedData = [];
 let executionResults = [];
 let savedLocations = [];
+let isPreReqChecked = false;
+let preReqFeedback = '';
 let ENVIRONMENT_API_URLS = {};
 let ENVIRONMENT_URLS = {};
 let loginComponent = null;
+
+// ── ResultsFilter instance for the production results table ──────────────────
+let activeResultsFilter = null;
 
 // =============================================
 // IFRAME MESSAGE LISTENER (userRoleType)
@@ -128,6 +140,8 @@ function resetState(keepLoginVisible = false) {
 
     uploadedData = [];
     executionResults = [];
+    isPreReqChecked = false;
+    preReqFeedback = '';
 
     // Reset UI
     if (elements.fileName) elements.fileName.textContent = 'Supported formats: .xlsx, .xls';
@@ -139,6 +153,15 @@ function resetState(keepLoginVisible = false) {
         elements.executeBtn.disabled = true;
         elements.executeBtn.textContent = '🚀 Execute Data Creation';
     }
+    if (elements.consentBtn) {
+        elements.consentBtn.style.display = 'none';
+        elements.consentBtn.textContent = '📝 Acknowledge Bulk Execution Pre-requisites';
+        elements.consentBtn.classList.remove('accepted');
+    }
+    if (elements.consentCheckbox) elements.consentCheckbox.checked = false;
+    if (elements.consentFeedback) elements.consentFeedback.value = '';
+    if (elements.consentSaveBtn) elements.consentSaveBtn.disabled = true;
+    if (elements.consentModal) elements.consentModal.classList.add('hidden');
     if (elements.uploadLabel) elements.uploadLabel.textContent = '📂 Choose Excel File';
     
     // Handle Visibility during Reset
@@ -237,6 +260,12 @@ const elements = {
     uploadLabel: document.querySelector('.upload-label'),
     executeBtn: document.getElementById('execute-btn'),
     resultsSection: document.getElementById('results-section'),
+    consentBtn: document.getElementById('consent-btn'),
+    consentModal: document.getElementById('consent-modal'),
+    consentCheckbox: document.getElementById('consent-checkbox'),
+    consentFeedback: document.getElementById('consent-feedback'),
+    consentCancelBtn: document.getElementById('consent-cancel-btn'),
+    consentSaveBtn: document.getElementById('consent-save-btn'),
     progressText: document.getElementById('progress-text'),
     progressBar: document.getElementById('progress-bar'),
     passCount: document.getElementById('pass-count'),
@@ -289,8 +318,11 @@ const elements = {
     v2AreaUnit: document.getElementById('v2-area-unit'),
     v2LocationName: document.getElementById('v2-location-name'),
     v2ResolveBtn: document.getElementById('v2-resolve-btn'),
-    // Start Row
-    startRowInput: document.getElementById('start-row-input')
+    // Start Row & Batch Size
+    startRowInput: document.getElementById('start-row-input'),
+    batchSizeInput: document.getElementById('batch-size-input'),
+    batchSizeHint: document.getElementById('batch-size-hint'),
+    batchSizeContainer: document.getElementById('batch-size-container')
 };
 
 // =============================================
@@ -349,6 +381,7 @@ async function loadCustomScripts() {
                 isMultithreaded: script.isMultithreaded,
                 groupByColumn: script.groupByColumn,
                 batchSize: script.batchSize,
+                allowLargeBatch: script.allowLargeBatch,
                 enableGeofencing: script.enableGeofencing,
                 outputConfig: script.outputConfig // Pass outputConfig 
             };
@@ -650,9 +683,7 @@ async function handleScriptSelection(value) {
     // Updated to match filename-derived keys (underscores) and remove team restriction
     const needsBoundary = (
         selectedDataType === 'Generate_Coordinates' ||
-        selectedDataType === 'Area_Audit' ||
         selectedDataType === 'Generate Coordinates' ||
-        selectedDataType === 'Area Audit' ||
         selectedDataType === 'Area Audit V2' ||
         selectedDataType === 'Area_Audit_V2.py'
     );
@@ -785,6 +816,44 @@ async function handleScriptSelection(value) {
                     if (match) elements.groupBySelect.value = match.value;
                 }
             }
+        }
+
+        // Handle Batch Size logic
+        if (elements.batchSizeInput) {
+            const maxBatch = template.allowLargeBatch ? 10000 : 100;
+            elements.batchSizeInput.max = maxBatch;
+            elements.batchSizeInput.value = template.batchSize || 1;
+            
+            if (elements.batchSizeHint) {
+                elements.batchSizeHint.textContent = `Max: ${maxBatch}.`;
+            }
+
+            // Show batch size only if batch processing is enabled (batchSize > 1) and not multithreaded
+            if (template.isMultithreaded) {
+                elements.batchSizeInput.disabled = true;
+                if (elements.batchSizeContainer) {
+                    elements.batchSizeContainer.style.display = 'none';
+                }
+            } else if (template.batchSize && template.batchSize > 1) {
+                elements.batchSizeInput.disabled = false;
+                if (elements.batchSizeContainer) {
+                    elements.batchSizeContainer.style.display = 'block';
+                }
+            } else {
+                elements.batchSizeInput.disabled = true;
+                if (elements.batchSizeContainer) {
+                    elements.batchSizeContainer.style.display = 'none';
+                }
+            }
+
+            // Enforce limit listener
+            elements.batchSizeInput.oninput = function() {
+                const val = parseInt(this.value);
+                if (val > maxBatch) {
+                    showToast(`Max batch size is ${maxBatch} for this script.`, 'error');
+                    this.value = maxBatch;
+                }
+            };
         }
     } else {
         elements.exportBtn.disabled = true;
@@ -982,6 +1051,11 @@ function renderExecutionResults() {
 
     // Update the last rendered index
     lastRenderedIndex = executionResults.length;
+
+    // Sync filter if active (show/hide rows based on current filter state)
+    if (activeResultsFilter) {
+        activeResultsFilter.sync();
+    }
 }
 
 // Saved location selection
@@ -1185,9 +1259,33 @@ function processFile(file) {
 
             // ONLY ENABLE IF DATA IS VALID AND PRESENT
             if (uploadedData && uploadedData.length > 0) {
-                elements.executeBtn.disabled = false;
+                const count = uploadedData.length;
+                if (count > 10) {
+                    if (elements.consentBtn) {
+                        elements.consentBtn.style.display = 'block';
+                        if (isPreReqChecked) {
+                            elements.consentBtn.textContent = 'Consent Accepted ✅';
+                            elements.consentBtn.classList.add('accepted');
+                            elements.executeBtn.disabled = false;
+                        } else {
+                            elements.consentBtn.textContent = '📝 Acknowledge Bulk Execution Pre-requisites';
+                            elements.consentBtn.classList.remove('accepted');
+                            elements.executeBtn.disabled = true;
+                        }
+                    } else {
+                        elements.executeBtn.disabled = false;
+                    }
+                } else {
+                    if (elements.consentBtn) {
+                        elements.consentBtn.style.display = 'none';
+                    }
+                    elements.executeBtn.disabled = false;
+                }
                 elements.executeBtn.textContent = '🚀 Execute Data Creation';
             } else {
+                if (elements.consentBtn) {
+                    elements.consentBtn.style.display = 'none';
+                }
                 elements.executeBtn.disabled = true;
             }
         } catch (error) {
@@ -1216,64 +1314,94 @@ function processFile(file) {
 
 
 
-elements.downloadResultsBtn.addEventListener('click', () => {
-    if (executionResults.length === 0) return alert('No results to download');
+// =============================================
+// XLSX DOWNLOAD HELPER (used by ResultsFilter.onDownload)
+// =============================================
+function _getOrderedSheet(exportData, template) {
+    if (!template) {
+        return XLSX.utils.json_to_sheet(exportData);
+    }
+    const inputCols = (template.inputColumns || []).map(c => typeof c === 'string' ? c : (c.name || c.header)).filter(c => c);
+    const outputCols = (template.outputColumns || []).filter(c => c);
+    
+    const excludedKeys = ['Response', 'response', 'Status', 'status', 'Code', 'code', 'Name', 'name'];
+    
+    const filteredData = exportData.map(row => {
+        const cleanRow = {};
+        Object.keys(row).forEach(k => {
+            if (inputCols.includes(k) || outputCols.includes(k) || !excludedKeys.includes(k)) {
+                cleanRow[k] = row[k];
+            }
+        });
+        return cleanRow;
+    });
 
-    let ws;
-    // Check if Dynamic UI is enabled
+    // Collect all keys present in filteredData
+    const allKeysInRow = new Set();
+    filteredData.forEach(row => {
+        Object.keys(row).forEach(k => {
+            if (k !== 'row') {
+                allKeysInRow.add(k);
+            }
+        });
+    });
+
+    // Order final headers dynamically
+    const finalHeaders = [];
+    inputCols.forEach(c => {
+        if (allKeysInRow.has(c)) {
+            finalHeaders.push(c);
+            allKeysInRow.delete(c);
+        }
+    });
+    outputCols.forEach(c => {
+        if (allKeysInRow.has(c)) {
+            finalHeaders.push(c);
+            allKeysInRow.delete(c);
+        }
+    });
+
+    // Leftover keys (like dynamic/additional attributes uploaded by user)
+    const leftoverKeys = Array.from(allKeysInRow);
+    finalHeaders.push(...leftoverKeys);
+
+    return XLSX.utils.json_to_sheet(filteredData, { header: finalHeaders });
+}
+
+// XLSX DOWNLOAD HELPER (used by ResultsFilter.onDownload)
+function _doXlsxDownload(data, baseFilename) {
+    if (!data || data.length === 0) return;
     const template = TEMPLATES[selectedDataType];
-    const isDynamic = template && template.outputConfig && template.outputConfig.isDynamicUI;
 
-    // Prepare Data for Export
-    // We want to export exactly what is shown in UI + maybe internal fields?
-    // For Dynamic, use all keys.
-    const exportData = executionResults.map(r => {
-        // Clone to avoid mutating original
+    const exportData = data.map(r => {
         const flat = { ...r };
-        delete flat.row; // Remove internal row index
+        delete flat.row; // strip internal row index
         return flat;
     });
 
-    if (isDynamic) {
-        // Dynamic Headers: Gather ALL unique keys from all rows (in case sparse)
-        const allKeys = new Set();
-        const internalKeys = ['row', 'status', 'response', 'API response', 'API_Response', 'name', 'code'];
-        // We prioritize explicit keys, but for Excel export we want everything usually.
-        // But maybe sort them nicely?
+    const ws = _getOrderedSheet(exportData, template);
 
-        // 1. Always 'Row' first? NO, User requested removal.
-        const definedHeaders = [];
-
-        // 2. Then Data Keys
-        exportData.forEach(row => Object.keys(row).forEach(k => {
-            if (!definedHeaders.includes(k) && !internalKeys.includes(k)) allKeys.add(k);
-        }));
-
-        // 3. Then Standard Endings
-        const endHeaders = ['name', 'code', 'status', 'response']; // If they exist locally
-
-        const extraKeys = Array.from(allKeys);
-
-        // 3. Final Order: Defined + Extras + Endings
-        // Check which endings actually exist
-        const presentEndings = endHeaders.filter(h => exportData.some(r => r[h] !== undefined));
-
-        const finalHeaders = [...definedHeaders, ...extraKeys, ...presentEndings];
-
-        ws = XLSX.utils.json_to_sheet(exportData, { header: finalHeaders });
-    } else {
-        // Legacy: Row, Name, Code, Status, Response
-        // But user might have extra keys even in legacy?
-        // Default behavior (random/alpha order usually) + json_to_sheet auto-detect
-        // Let's just use auto-detect but ensure Row is first if possible?
-        ws = XLSX.utils.json_to_sheet(exportData);
-    }
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Results');
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = baseFilename.endsWith('.xlsx') ? baseFilename : `${baseFilename}_${dateStr}.xlsx`;
+    XLSX.writeFile(wb, filename);
+}
 
-    const fileName = `Results_${selectedDataType}_${new Date().toISOString().slice(0, 10)}.xlsx`;
-    XLSX.writeFile(wb, fileName);
-});
+// ── Smart Download Handlers (called from HTML onclick) ───────────────────────
+window.handleSmartDownload = function (mode) {
+    toggleDownloadMenu(false); // close menu first
+    if (activeResultsFilter) {
+        activeResultsFilter.download(mode);
+    } else {
+        // Fallback: download everything if filter not initialized
+        _doXlsxDownload(executionResults, `Results_${selectedDataType}`);
+    }
+};
+
+window.toggleDownloadMenu = function (forceState) {
+    // No-op: select dropdown handles opening/closing natively
+};
 
 // =============================================
 // SHARED EXECUTION UTILITIES
@@ -1304,6 +1432,15 @@ function formatDuration(ms) {
 // Start execution - initializes UI and timer
 function startExecution(buttonText = '⏳ Processing...') {
     executionStartTime = Date.now();
+    window.isExecutionActive = true;
+
+    // Destroy any existing filter (new run wipes previous results)
+    if (activeResultsFilter) {
+        activeResultsFilter.destroy();
+        activeResultsFilter = null;
+    }
+    // Close download menu if open
+    toggleDownloadMenu(false);
 
     // Reset UI
     elements.executeBtn.disabled = true;
@@ -1337,8 +1474,9 @@ function updateProgress(current, total, passCount, failCount) {
     elements.failCount.textContent = failCount;
 }
 
-// Complete execution - stops timer, shows download button
+// Complete execution - stops timer, shows download button, initializes filter
 function completeExecution() {
+    window.isExecutionActive = false;
     // Stop timer
     if (executionTimerInterval) {
         clearInterval(executionTimerInterval);
@@ -1352,6 +1490,23 @@ function completeExecution() {
     // Update button and show download
     elements.executeBtn.textContent = '✅ Completed';
     elements.downloadResultsBtn.classList.remove('hidden');
+
+    // ── Initialize Results Filter ────────────────────────────────────────────
+    const table = document.querySelector('#results-section .results-table');
+    if (table && typeof ResultsFilter !== 'undefined' && executionResults.length > 0) {
+        const template = TEMPLATES[selectedDataType];
+        activeResultsFilter = new ResultsFilter({
+            tableEl    : table,
+            getData    : () => executionResults,
+            isPassFn   : (row) => evaluateRowStatus(row, template).isPass,
+            getFileName: () => `Results_${selectedDataType}`,
+            onDownload : _doXlsxDownload,
+            darkTheme  : false
+        });
+        activeResultsFilter.init();
+        activeResultsFilter.sync();
+    }
+    // ─────────────────────────────────────────────────────────────────────────
 
     console.log(`Execution completed in ${formatDuration(totalTime)}`);
 
@@ -1393,7 +1548,7 @@ async function _recordAuditEntry(totalTimeMs) {
         if (executionResults && executionResults.length > 0 && typeof XLSX !== 'undefined') {
             try {
                 const exportData = executionResults.map(r => { const f = { ...r }; delete f.row; return f; });
-                const ws = XLSX.utils.json_to_sheet(exportData);
+                const ws = _getOrderedSheet(exportData, TEMPLATES[selectedDataType]);
                 const wb = XLSX.utils.book_new();
                 XLSX.utils.book_append_sheet(wb, ws, 'Results');
                 const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'base64' });
@@ -1418,7 +1573,9 @@ async function _recordAuditEntry(totalTimeMs) {
             inputFileName,
             inputFileBase64,
             outputFileName,
-            outputFileBase64
+            outputFileBase64,
+            preReqChecked: isPreReqChecked,
+            preReqReason: preReqFeedback
         };
 
         await fetch('/api/audit/record', {
@@ -1868,7 +2025,7 @@ if (elements.executeBtn) {
 
                 // [PROCESSING OPTIONS LOGIC] - DRIVEN BY TEMPLATE
                 const template = TEMPLATES[selectedDataType] || {};
-                let batchSize = parseInt(template.batchSize);
+                let batchSize = elements.batchSizeInput ? parseInt(elements.batchSizeInput.value) : parseInt(template.batchSize);
                 if (isNaN(batchSize) || batchSize <= 0) batchSize = 1;
                 
                 const isParallel = template.isMultithreaded === true;
@@ -2171,6 +2328,64 @@ if (elements.v2ResolveBtn) {
     });
 } else {
     console.warn("[Init] V2 Resolve Button NOT Found");
+}
+
+// =============================================
+// CONSENT MODAL LOGIC
+// =============================================
+if (elements.consentBtn) {
+    elements.consentBtn.addEventListener('click', () => {
+        if (elements.consentModal) {
+            if (elements.consentCheckbox) elements.consentCheckbox.checked = isPreReqChecked;
+            if (elements.consentFeedback) elements.consentFeedback.value = preReqFeedback;
+            validateConsentForm();
+            elements.consentModal.classList.remove('hidden');
+        }
+    });
+}
+
+function validateConsentForm() {
+    const isChecked = elements.consentCheckbox ? elements.consentCheckbox.checked : false;
+    const feedbackVal = elements.consentFeedback ? elements.consentFeedback.value.trim() : '';
+    if (elements.consentSaveBtn) {
+        elements.consentSaveBtn.disabled = !(isChecked && feedbackVal.length > 0);
+    }
+}
+
+if (elements.consentCheckbox) {
+    elements.consentCheckbox.addEventListener('change', validateConsentForm);
+}
+
+if (elements.consentFeedback) {
+    elements.consentFeedback.addEventListener('input', validateConsentForm);
+}
+
+if (elements.consentCancelBtn) {
+    elements.consentCancelBtn.addEventListener('click', () => {
+        if (elements.consentModal) {
+            elements.consentModal.classList.add('hidden');
+        }
+    });
+}
+
+if (elements.consentSaveBtn) {
+    elements.consentSaveBtn.addEventListener('click', () => {
+        isPreReqChecked = elements.consentCheckbox ? elements.consentCheckbox.checked : false;
+        preReqFeedback = elements.consentFeedback ? elements.consentFeedback.value.trim() : '';
+        
+        if (elements.consentBtn) {
+            elements.consentBtn.textContent = 'Consent Accepted ✅';
+            elements.consentBtn.classList.add('accepted');
+        }
+        
+        if (elements.executeBtn) {
+            elements.executeBtn.disabled = false;
+        }
+        
+        if (elements.consentModal) {
+            elements.consentModal.classList.add('hidden');
+        }
+    });
 }
 
 

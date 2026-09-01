@@ -855,6 +855,10 @@ module.exports = function (app) {
             }
         }
 
+        if (envConfig) {
+            envConfig.Geocoding_api_key = getGeocodingApiKey();
+        }
+
         // Locate the script
         // UPDATED: Runnable scripts are now in 'Converted Scripts' sibling folder
         const scriptPath = path.join(__dirname, '..', 'Converted Scripts', scriptName);
@@ -1168,7 +1172,7 @@ module.exports = function (app) {
 
     // Generate Script Template
     app.post('/api/scripts/generate', (req, res) => {
-        const { description, existing_code, scriptName, inputColumns, isMultithreaded, outputConfig, allowAdditionalAttributes, enableGeofencing } = req.body;
+        const { description, existing_code, scriptName, inputColumns, outputColumns, isMultithreaded, outputConfig, allowAdditionalAttributes, enableGeofencing } = req.body;
 
         console.log('[DEBUG GENERATE] Incoming Request Body:', JSON.stringify({
             scriptName,
@@ -1193,6 +1197,7 @@ module.exports = function (app) {
             existing_code,
             scriptName,
             inputColumns,
+            outputColumns,
             isMultithreaded,
             outputConfig,
             allowAdditionalAttributes: allowAdditionalAttributes || false,
@@ -1424,6 +1429,10 @@ module.exports = function (app) {
 
         } else {
             console.log('[Test Run] No environment in envConfig');
+        }
+
+        if (envConfig) {
+            envConfig.Geocoding_api_key = getGeocodingApiKey();
         }
 
         // Always inject master_data_config from DB
@@ -1721,7 +1730,7 @@ module.exports = function (app) {
     // REGISTER SCRIPT
     app.post('/api/scripts/register', async (req, res) => {
         try {
-            const { code, name, team, description, inputColumns, generationPrompt, isMultithreaded, groupByColumn, batchSize } = req.body;
+            const { code, name, team, description, inputColumns, outputColumns, generationPrompt, isMultithreaded, groupByColumn, batchSize, allowLargeBatch, originalFilename } = req.body;
 
             if (!code || !name) return res.status(400).json({ error: 'Missing code or name' });
 
@@ -1812,9 +1821,11 @@ module.exports = function (app) {
                 description: description || "Custom User Script",
                 expected_columns: (inputColumns || []).map(c => (typeof c === 'object' && c.name) ? c.name : c),
                 columns: inputColumns,
+                outputColumns: outputColumns || [],
                 requiresLogin: true,
                 isMultithreaded: finalIsMultithreaded,
                 batchSize: finalBatchSize,
+                allowLargeBatch: allowLargeBatch || false,
                 groupByColumn: finalGroupBy,
                 enableGeofencing: finalEnableGeofencing,
                 allowAdditionalAttributes: finalAllowAttributes,
@@ -1850,6 +1861,39 @@ module.exports = function (app) {
                 try {
                     registry = JSON.parse(fs.readFileSync(registryPath, 'utf8'));
                 } catch (e) { console.error("Registry read error", e); }
+            }
+
+            // --- RENAME LOGIC: Cleanup Old Registered Script and Draft if Rename detected ---
+            if (originalFilename && originalFilename !== pyFilename) {
+                try {
+                    // 1. Delete old registered script from Converted Scripts
+                    const oldScriptPath = path.join(scriptsDir, originalFilename);
+                    if (fs.existsSync(oldScriptPath)) {
+                        fs.unlinkSync(oldScriptPath);
+                        console.log(`[Register Rename] Deleted old script file: ${originalFilename}`);
+                    }
+                    
+                    // 2. Remove old entry from scripts_registry.json
+                    const oldIndex = registry.findIndex(r => r.filename === originalFilename);
+                    if (oldIndex >= 0) {
+                        registry.splice(oldIndex, 1);
+                        console.log(`[Register Rename] Removed old registry entry for: ${originalFilename}`);
+                    }
+
+                    // 3. Delete old draft and draft metadata if they exist
+                    const oldDraftPath = path.join(draftsDir, originalFilename);
+                    if (fs.existsSync(oldDraftPath)) {
+                        fs.unlinkSync(oldDraftPath);
+                        console.log(`[Register Rename] Cleaned up old draft file: ${originalFilename}`);
+                    }
+                    const oldDraftMetaPath = path.join(draftsDir, originalFilename + '.meta.json');
+                    if (fs.existsSync(oldDraftMetaPath)) {
+                        fs.unlinkSync(oldDraftMetaPath);
+                        console.log(`[Register Rename] Cleaned up old draft meta file: ${originalFilename}`);
+                    }
+                } catch (err) {
+                    console.error("[Register Rename] Failed to cleanup old script and draft:", err);
+                }
             }
 
             // Upsert Logic: Find existing to preserve other fields if needed, or merge new
@@ -2156,7 +2200,7 @@ module.exports = function (app) {
             fs.writeFileSync(draftPath, code, 'utf8');
 
             // Save Metadata Sidecar
-            const { description, generationPrompt, inputColumns, team, groupByColumn, isMultithreaded, batchSize, outputConfig } = req.body;
+            const { description, generationPrompt, inputColumns, outputColumns, team, groupByColumn, isMultithreaded, batchSize, outputConfig, allowLargeBatch } = req.body;
 
             // FIX: STRICT MODE - Do not extract from prompt. Blindly follow inputColumns.
             let finalInputColumns = inputColumns || [];
@@ -2168,6 +2212,7 @@ module.exports = function (app) {
                 description: description || "",
                 generationPrompt: generationPrompt || description || "", // Fallback for legacy
                 inputColumns: finalInputColumns,
+                outputColumns: outputColumns || [],
                 team: team || "Unassigned",
                 groupByColumn: groupByColumn,
                 isMultithreaded: isMultithreaded,
@@ -2175,6 +2220,7 @@ module.exports = function (app) {
                 allowAdditionalAttributes: req.body.allowAdditionalAttributes || false,
                 additionalAttributes: req.body.additionalAttributes || [],
                 batchSize: batchSize || 10,
+                allowLargeBatch: allowLargeBatch || false,
                 outputConfig: outputConfig || {},
                 mtime: Date.now()
             };
@@ -2492,7 +2538,9 @@ module.exports = function (app) {
                 passCount, failCount,
                 inputFileName, inputFileBase64,
                 outputFileName, outputFileBase64,
-                isLocal
+                isLocal,
+                preReqChecked,
+                preReqReason
             } = req.body;
 
             const trail = await readAuditTrail(!!isLocal);
@@ -2520,7 +2568,9 @@ module.exports = function (app) {
                 inputFile: inputFilePath,
                 outputFile: outputFilePath,
                 originalInputFile: inputFileName || '',
-                originalOutputFile: outputFileName || ''
+                originalOutputFile: outputFileName || '',
+                preReqChecked: !!preReqChecked,
+                preReqReason: preReqReason || ''
             };
 
             trail.records.push(record);

@@ -2,7 +2,7 @@
 # CONFIG: batchSize = 5
 # CONFIG: enableGeofencing = False
 # CONFIG: allowAdditionalAttributes = False
-# EXPECTED_INPUT_COLUMNS: Farmer Name, Farmer ID, Tag Name
+# EXPECTED_INPUT_COLUMNS: Asset Name, Asset ID, Tag Name
 
 def run(data, token, env_config):
     import pandas as pd
@@ -226,136 +226,129 @@ def run(data, token, env_config):
     builtins.wk = wk
     builtins.wb = wk
     wb = wk
-    global _farmertag_list
-    _farmertag_list = []
+    global _assettag_cache_initialized, _assettag_list_cache
+    _assettag_list_cache = []
+    _assettag_cache_initialized = False
 
     def excel_to_iso_date(val, col_name=None):
         """
-    Converts Excel serial dates (numbers) or standard date strings to ISO 8601 format (YYYY-MM-DDTHH:MM:SS.000Z).
-    Prevents conversion for non-date numeric columns.
+    Converts Excel serial dates (float/int) or standard date strings to ISO 8601 format (YYYY-MM-DDT00:00:00.000Z).
+    Only converts numeric values if 'col_name' suggests it's a date.
     """
         if val is None or val == '':
             return None
-        date_keywords = ['date', 'dos', 'dob', 'time', 'sowing', 'pruning', 'harvest']
-        is_date_column = col_name and any((keyword in col_name.lower() for keyword in date_keywords))
         if isinstance(val, (int, float)):
-            if is_date_column:
+            if col_name and any((keyword in col_name.lower() for keyword in ['date', 'dos', 'dob', 'time', 'sowing', 'pruning', 'harvest'])):
                 try:
-                    dt = datetime(1899, 12, 30) + timedelta(days=val)
+                    excel_epoch = datetime(1899, 12, 30)
+                    if val >= 60:
+                        dt = excel_epoch + timedelta(days=val)
+                    else:
+                        dt = excel_epoch + timedelta(days=val)
                     return dt.isoformat(timespec='milliseconds') + 'Z'
-                except Exception:
+                except Exception as e:
+                    print(f"Warning: Could not convert Excel serial date {val} for column '{col_name}': {e}")
                     pass
-            return val
+            else:
+                return val
         if isinstance(val, str):
             val = val.strip()
             if not val:
                 return None
-            date_formats = ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%m/%d/%Y %H:%M:%S', '%m/%d/%Y', '%d-%m-%Y %H:%M:%S', '%d-%m-%Y']
+            date_formats = ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%d %H:%M:%S.%f', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%m/%d/%Y', '%d-%m-%Y', '%Y/%m/%d']
             for fmt in date_formats:
                 try:
                     dt = datetime.strptime(val, fmt)
                     return dt.isoformat(timespec='milliseconds') + 'Z'
                 except ValueError:
                     continue
+            return val
         return val
 
-    def _user_run(data, token, env_config):
-        """
-    Main function to orchestrate the processing of rows in parallel.
-    """
-        global _farmertag_list
-        with _lock:
-            if not _farmertag_list:
-                print('[FARMER_TAG_MASTER] Fetching all farmer tags...')
-                _farmertag_list = master_search.fetch_all('farmertag', env_config)
-                if not _farmertag_list:
-                    print('[FARMER_TAG_MASTER] No farmer tags found or failed to fetch.')
-                else:
-                    print(f'[FARMER_TAG_MASTER] Fetched {len(_farmertag_list)} farmer tags.')
-        return thread_utils.run_in_parallel(process_func=process_row, items=data, token=token, env_config=env_config)
-
     def process_row(row):
-        """
-    Processes a single row of data to add a farmer tag.
-    """
-        env_config = builtins.env_config
-        headers = {'Authorization': f'Bearer {token}'}
-        row['Farmer Name'] = row.get('Farmer Name')
-        row['Farmer ID'] = row.get('Farmer ID')
-        row['Tag Name'] = row.get('Tag Name')
+        row['Tag ID'] = ''
         row['Status'] = 'Fail'
         row['Response'] = ''
-        row['Tag ID'] = ''
-        farmer_id = row.get('Farmer ID')
+        asset_name = row.get('Asset Name')
+        asset_id = row.get('Asset ID')
         tag_name = row.get('Tag Name')
-        if not farmer_id:
-            row['Response'] = 'Farmer ID is missing.'
+        row['Asset Name'] = asset_name
+        row['Asset ID'] = asset_id
+        row['Tag Name'] = tag_name
+        if not asset_id:
+            row['Response'] = 'Asset ID is missing.'
+            print(f"Skipping row: Asset ID is missing for Asset Name '{asset_name}'.")
             return row
         if not tag_name:
             row['Response'] = 'Tag Name is missing.'
+            print(f"Skipping row: Tag Name is missing for Asset ID '{asset_id}'.")
             return row
-        with _lock:
-            tag_lookup_result = master_search.lookup_from_cache(_farmertag_list, 'name', tag_name, 'id')
+        global _assettag_list_cache
+        tag_lookup_result = master_search.lookup_from_cache(_assettag_list_cache, 'name', tag_name, 'id')
         if not tag_lookup_result['found']:
             row['Status'] = 'Fail'
-            row['Response'] = tag_lookup_result['message'] or 'Tag not found'
-            print(f'[FARMER_TAG_MASTER] {tag_name} → ID: Not Found')
+            row['Response'] = 'Tag not found'
+            print(f"[ASSETTAG_LOOKUP] '{tag_name}' → Result: Not Found. Skipping row for Asset ID: {asset_id}.")
             return row
-        tag_id = tag_lookup_result['value']
-        row['Tag ID'] = tag_id
-        print(f'[FARMER_TAG_MASTER] {tag_name} → ID: {tag_id}')
-        fetch_farmer_url = f'{base_url}/services/farm/api/farmers/{farmer_id}'
+        new_tag_id = tag_lookup_result['value']
+        row['Tag ID'] = new_tag_id
+        print(f"[ASSETTAG_LOOKUP] '{tag_name}' → ID: {new_tag_id}")
+        headers = {'Authorization': f'Bearer {builtins.token}'}
+        fetch_asset_url = f'{base_url}/services/farm/api/assets/{asset_id}'
         try:
-            fetch_resp = _log_get(fetch_farmer_url, headers=headers)
-            if not fetch_resp.ok:
-                row['Response'] = f'Failed to fetch farmer details: {fetch_resp.status_code} - {fetch_resp.text}'
-                return row
-            farmer_data = fetch_resp.json()
-            print(f'[API_DEBUG] Fetched farmer {farmer_id} details successfully.')
+            fetch_asset_response = _log_get(fetch_asset_url, headers=headers)
+            fetch_asset_response.raise_for_status()
+            asset_data = fetch_asset_response.json()
         except requests.exceptions.RequestException as e:
-            row['Response'] = f'API request failed while fetching farmer details: {e}'
+            row['Status'] = 'Fail'
+            row['Response'] = f'Failed to fetch asset details (GET /{asset_id}): {e}'
+            print(f"Error fetching asset '{asset_id}': {e}")
             return row
-        except json.JSONDecodeError:
-            row['Response'] = f'Failed to decode JSON from farmer details API: {fetch_resp.text}'
+        except json.JSONDecodeError as e:
+            row['Status'] = 'Fail'
+            row['Response'] = f'Failed to decode asset details response (GET /{asset_id}): {e}. Response text: {fetch_asset_response.text}'
+            print(f"Error decoding asset '{asset_id}' response: {e}. Response text: {fetch_asset_response.text}")
             return row
-        current_tags = (farmer_data.get('data') or {}).get('tags', [])
-        if not isinstance(current_tags, list):
-            current_tags = []
-        current_tags = [t for t in current_tags if isinstance(t, int)]
-        updated_tags = list(current_tags)
-        tag_added = False
-        if tag_id not in updated_tags:
-            updated_tags.append(tag_id)
-            farmer_data['data']['tags'] = updated_tags
-            tag_added = True
-            print(f"[LOGIC] Tag {tag_id} ('{tag_name}') added to farmer's tag list.")
-        else:
-            row['Status'] = 'Pass'
-            row['Response'] = 'Tag already associated with farmer'
-            print(f"[LOGIC] Tag {tag_id} ('{tag_name}') already associated with farmer {farmer_id}. Skipping update.")
-            return row
-        update_farmer_url = f'{base_url}/services/farm/api/farmers'
-        payload_data = farmer_data
-        files = {'dto': (None, json.dumps(payload_data), 'application/json')}
+        updated_asset_data = asset_data.copy()
+        if 'data' not in updated_asset_data or not isinstance(updated_asset_data['data'], dict):
+            updated_asset_data['data'] = {}
+        updated_asset_data['data']['tags'] = [new_tag_id]
+        update_asset_url = f'{base_url}/services/farm/api/assets'
         try:
-            put_resp = _log_put(update_farmer_url, headers=headers, files=files)
-            if put_resp.ok:
+            files = {'dto': (None, json.dumps(updated_asset_data), 'application/json')}
+            update_asset_response = _log_put(update_asset_url, headers=headers, files=files)
+            if update_asset_response.status_code in [200, 201]:
                 row['Status'] = 'Pass'
-                row['Response'] = 'Tag updated to farmer'
-                print(f'[API_DEBUG] Farmer {farmer_id} tags updated successfully with tag {tag_id}.')
+                row['Response'] = 'Tag updated to asset'
+                print(f"Successfully updated asset '{asset_id}' with tag '{tag_name}' (ID: {new_tag_id}).")
             else:
                 row['Status'] = 'Fail'
-                row['Response'] = f'Failed to update farmer tags: {put_resp.status_code} - {put_resp.text}'
-                print(f'[API_DEBUG] Failed to update farmer {farmer_id} tags: {put_resp.status_code} - {put_resp.text}')
+                row['Response'] = f'Asset update failed (PUT /{asset_id}): {update_asset_response.status_code} - {update_asset_response.text}'
+                print(f"Failed to update asset '{asset_id}': {update_asset_response.status_code} - {update_asset_response.text}")
         except requests.exceptions.RequestException as e:
             row['Status'] = 'Fail'
-            row['Response'] = f'API request failed while updating farmer tags: {e}'
-        except json.JSONDecodeError:
+            row['Response'] = f'Request error during asset update (PUT /{asset_id}): {e}'
+            print(f"Request error during asset update '{asset_id}': {e}")
+        except Exception as e:
             row['Status'] = 'Fail'
-            row['Response'] = f'Failed to decode JSON from farmer update API: {put_resp.text}'
+            row['Response'] = f'An unexpected error occurred during asset update (PUT /{asset_id}): {e}'
+            print(f"Unexpected error during asset update '{asset_id}': {e}")
         return row
-    "\nOUTPUT MAPPING CONFIGURATION:\n- UI Output Definition:\n- UI Column 'Farmer Name': Set to '' (Logic: from excel)\n- UI Column 'Farmer ID': Set to '' (Logic: from excel)\n- UI Column 'Tag Name': Set to '' (Logic: from excel)\n- UI Column 'Status': Set to '' (Logic: Pass if farmer update API status code is 200 or 201, else Fail)\n- Excel Output Definition:\n   - Column 'Tag ID': Set to '' (Logic: attribute 'id' from tag API response)\n   - Column 'Status': Set to '' (Logic: 'Fail' if tag not found or if status code of farmer update is not 200\n'Pass' if status of farmer update is 200 or 201)\n   - Column 'Response': Set to '' (Logic: 'Tag not found' if tag not found or \nwhole response of farmer update if status code is not 200\n'Tag updated to farmer' if farmer update response code is 200 or 201)\n"
-    _lock = thread_utils.create_lock()
+
+    def _user_run(data, token, env_config):
+        builtins.token = token
+        builtins.env_config = env_config
+        global _assettag_cache_initialized
+        global _assettag_list_cache
+        if not _assettag_cache_initialized:
+            print('[RUN] Initializing assettag cache globally...')
+            _assettag_list_cache = master_search.fetch_all('assettag', builtins.env_config)
+            if not _assettag_list_cache:
+                print('[RUN] WARNING: No asset tags fetched during global initialization. All tag lookups may fail.')
+            else:
+                print(f'[RUN] Successfully fetched {len(_assettag_list_cache)} asset tags for global cache.')
+            _assettag_cache_initialized = True
+        return thread_utils.run_in_parallel(process_func=process_row, items=data, token=token, env_config=env_config)
     res = _user_run(data, token, env_config)
     try:
         if res is None and hasattr(builtins, 'data_df'):
@@ -365,3 +358,5 @@ def run(data, token, env_config):
     except Exception as e:
         print(f'[Warn] Failed to sync data_df to result: {e}')
     return res
+_assettag_cache_initialized = None
+_assettag_list_cache = None

@@ -862,7 +862,15 @@ except Exception as e:
         decorator_list=[]
     )
     
-    final_module = ast.Module(body=[run_func], type_ignores=[])
+    module_body = [run_func]
+    # Add module-level placeholder variables to prevent linters from complaining about missing bindings
+    for name in sorted(global_names):
+        module_body.append(ast.Assign(
+            targets=[ast.Name(id=name, ctx=ast.Store())],
+            value=ast.Constant(value=None)
+        ))
+    
+    final_module = ast.Module(body=module_body, type_ignores=[])
     ast.fix_missing_locations(final_module)
     
     generated_code = ast.unparse(final_module)

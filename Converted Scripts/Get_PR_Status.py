@@ -1,3 +1,7 @@
+# CONFIG: enableGeofencing = False
+# CONFIG: allowAdditionalAttributes = False
+# EXPECTED_INPUT_COLUMNS: CA Name, CA ID
+
 def run(data, token, env_config):
     import pandas as pd
     import builtins
@@ -216,16 +220,13 @@ def run(data, token, env_config):
     wb = wk
 
     def _user_run(data, token, env_config):
+        import pandas as pd
         import builtins
         import concurrent.futures
         import requests
         import json
-        import os
-        import time
-        import argparse
-        from datetime import datetime
         import requests
-        import pandas as pd
+        import json
 
         def _log_req(method, url, **kwargs):
 
@@ -271,8 +272,15 @@ def run(data, token, env_config):
                         payload = f'[Multipart Files] Keys: {list(files.keys())}'
             if not payload:
                 payload = 'No Payload'
-            print(f'[API_DEBUG] 📦 PAYLOAD: {payload}')
-            print(f'[API_DEBUG] ----------------------------------------------------------------')
+            payload_type = 'JSON' if kwargs.get('json') else 'Data'
+            if payload_type == 'Data' and isinstance(payload, str):
+                try:
+                    json.loads(payload)
+                    payload_type = 'Data (JSON)'
+                except:
+                    pass
+            if not kwargs.get('json') and (not kwargs.get('data')) and (not payload_type == 'Data (JSON)'):
+                payload_type = 'Unknown/Multipart'
             try:
                 if method == 'GET':
                     resp = requests.get(url, **kwargs)
@@ -280,11 +288,13 @@ def run(data, token, env_config):
                     resp = requests.post(url, **kwargs)
                 elif method == 'PUT':
                     resp = requests.put(url, **kwargs)
+                elif method == 'DELETE':
+                    resp = requests.delete(url, **kwargs)
                 else:
                     resp = requests.request(method, url, **kwargs)
                 body_preview = 'Binary/No Content'
                 try:
-                    if not resp.text:
+                    if not resp.text or not resp.text.strip():
                         body_preview = '[Empty Response]'
                     else:
                         try:
@@ -312,6 +322,9 @@ def run(data, token, env_config):
 
         def _log_put(url, **kwargs):
             return _log_req('PUT', url, **kwargs)
+
+        def _log_delete(url, **kwargs):
+            return _log_req('DELETE', url, **kwargs)
 
         def _safe_iloc(row, idx):
             try:
@@ -420,263 +433,72 @@ def run(data, token, env_config):
         builtins.wk = wk
         builtins.wb = wk
         wb = wk
-        sheet_name = 'Plot_details'
-        env_sheet_name = 'Environment_Details'
-        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
-        env_url = base_url
-        env_url = base_url
-        DELETE_PLOT_API = f'{env_url}/services/farm/api/intelligence/croppable-areas/request'
-        STATUS_CHECK_API = f'{env_url}/services/farm/api/intelligence/croppable-areas/request/status?requestId={{}}'
-        df = builtins.data_df
 
-        def save_df_to_excel(df_to_save, file_path, sheet_name=None, max_retries=3):
-            if sheet_name is None:
-                sheet_name = sheet_name
-            attempt = 0
-            while attempt < max_retries:
-                try:
-                    with pd.ExcelWriter(file_path, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
-                        df_to_save.to_excel(writer, sheet_name, index=False)
-                    print(f'✅ Excel updated: {file_path} (sheet: {sheet_name})')
-                    return True
-                except PermissionError:
-                    attempt += 1
-                    print(f'⚠️ Permission denied when saving Excel. Ensure the file is closed. Retry {attempt}/{max_retries} ...')
-                    time.sleep(4)
-                except FileNotFoundError:
-                    try:
-                        with pd.ExcelWriter(file_path, engine='openpyxl', mode='w') as writer:
-                            df_to_save.to_excel(writer, sheet_name, index=False)
-                        print(f'✅ Excel created and saved: {file_path} (sheet: {sheet_name})')
-                        return True
-                    except Exception as e:
-                        print(f'❌ Failed to create Excel: {e}')
-                        break
-                except Exception as e:
-                    print(f'❌ Unexpected error while saving Excel: {e}')
-                    break
-            backup_path = file_path.replace('.xlsx', f'_backup_{int(time.time())}.xlsx')
-            try:
-                with pd.ExcelWriter(backup_path, engine='openpyxl', mode='w') as writer:
-                    df_to_save.to_excel(writer, sheet_name, index=False)
-                print(f'❌ Could not save original file. Saved backup: {backup_path}')
-                return False
-            except Exception as e:
-                print(f'❌ Failed to save backup file as well: {e}')
-                return False
-
-        def phase1_send_deletes(df_in, headers, delete_api=None, per_call_sleep=0.4):
-            if delete_api is None:
-                delete_api = DELETE_PLOT_API
-            print('===========================================')
-            print('🔁 PHASE 1: Sending DELETE request for all rows')
-            print('===========================================')
-            for idx, row in df_in.iterrows():
-                plot_id = row.get('id', '')
-                if pd.isna(plot_id) or str(plot_id).strip() == '':
-                    print(f'⚠️ Row {idx + 1}: Empty ID → skipping')
-                    df_in.at[idx, 'deletion response'] = 'Skipped: empty id'
-                    df_in.at[idx, 'deletion status'] = 'Skipped'
-                    df_in.at[idx, 'request id'] = ''
-                    continue
-                print(f'🧭 Row {idx + 1}: Sending delete for Plot ID {plot_id}')
-                try:
-                    resp = _log_post(delete_api, json=[plot_id], headers=headers, timeout=60)
-                except Exception as e:
-                    df_in.at[idx, 'deletion response'] = f'Exception: {e}'
-                    df_in.at[idx, 'deletion status'] = 'Delete Failed'
-                    df_in.at[idx, 'request id'] = ''
-                    print(f'    ❌ Exception during delete call: {e}')
-                    time.sleep(per_call_sleep)
-                    continue
-                if resp.status_code == 200:
-                    try:
-                        resp_json = resp.json()
-                    except Exception:
-                        resp_json = resp.text
-                    df_in.at[idx, 'deletion response'] = str(resp_json)
-                    req_id = ''
-                    if isinstance(resp_json, dict):
-                        req_id = resp_json.get('id') or resp_json.get('requestId') or resp_json.get('request_id') or ''
-                        if not req_id:
-                            for v in resp_json.values():
-                                if isinstance(v, dict):
-                                    req_id = v.get('id') or v.get('requestId') or ''
-                                    if req_id:
-                                        break
-                    elif isinstance(resp_json, list) and len(resp_json) > 0 and isinstance(resp_json[0], dict):
-                        req_id = resp_json[0].get('id') or resp_json[0].get('requestId') or ''
-                    df_in.at[idx, 'request id'] = req_id or ''
-                    del_stat = 'Queued'
-                    if isinstance(resp_json, dict):
-                        del_stat = resp_json.get('status', 'Queued')
-                    df_in.at[idx, 'deletion status'] = del_stat
-                    print(f'    ✔️ Delete queued. Request Id: {req_id or 'N/A'}')
+        def _user_run(data, token, env_config):
+            api_base_url = env_config.get('apiBaseUrl', '').rstrip('/')
+            url = f'{api_base_url}/services/farm/api/croppable-areas/async/plot-risk/status'
+            headers = {'Authorization': f'Bearer {token}'}
+            processed_data = []
+            for row in data:
+                processed_row = dict(row)
+                ca_name = processed_row.get('CA Name')
+                ca_id_raw = processed_row.get('CA ID')
+                if ca_id_raw is not None:
+                    ca_id = str(ca_id_raw).strip()
+                    if ca_id.endswith('.0'):
+                        ca_id = ca_id[:-2]
                 else:
-                    df_in.at[idx, 'deletion response'] = f'Error {resp.status_code}: {resp.text}'
-                    df_in.at[idx, 'deletion status'] = 'Delete Failed'
-                    df_in.at[idx, 'request id'] = ''
-                    df_in.at[idx, 'Status'] = 'Failed'
-                    df_in.at[idx, 'APIresponse'] = f'Error {resp.status_code}: {resp.text}'
-                    print(f'    ❌ Delete failed (HTTP {resp.status_code}) for Plot ID {plot_id}')
-                time.sleep(per_call_sleep)
-            return df_in
-
-        def phase2_check_status(df_in, headers, status_api_template=None, post_delete_pause=8, per_status_sleep=0.4, max_status_attempts=1):
-            if status_api_template is None:
-                status_api_template = STATUS_CHECK_API
-            print('\n⏳ Waiting fixed period before status checks...')
-            time.sleep(post_delete_pause)
-            print('===========================================')
-            print('🔁 PHASE 2: Checking STATUS for all rows')
-            print('===========================================')
-            for idx, row in df_in.iterrows():
-                plot_id = row.get('id', '')
-                req_id = row.get('request id', '')
-                if pd.isna(plot_id) or str(plot_id).strip() == '':
+                    ca_id = ''
+                processed_row['CA ID'] = ca_id
+                processed_row['CA Name'] = ca_name
+                processed_row['Status'] = None
+                processed_row['Error'] = None
+                processed_row['Message'] = None
+                if not ca_id:
+                    processed_row['Status'] = 'FAILED'
+                    processed_row['Error'] = 'Missing CA ID'
+                    processed_row['Message'] = 'CA ID was not found in the input.'
+                    processed_data.append(processed_row)
                     continue
-                if not req_id or str(req_id).strip() == '':
-                    current_resp = str(row.get('deletion response', ''))
-                    if 'Error' in current_resp or 'Exception' in current_resp:
-                        df_in.at[idx, 'deletion status'] = 'Delete failed - no request id'
-                        print(f'⚠️ Row {idx + 1}: No request id; delete failed earlier.')
-                    else:
-                        try:
-                            print(f'🔎 Row {idx + 1}: No request id; attempting fallback status check using Plot ID {plot_id}')
-                            fallback_resp = _log_get(status_api_template.format(plot_id), headers=headers, timeout=40)
-                            if fallback_resp.status_code == 200:
-                                try:
-                                    fallback_json = fallback_resp.json()
-                                except Exception:
-                                    fallback_json = fallback_resp.text
-                                df_in.at[idx, 'deletion status'] = str(fallback_json)
-                                print(f'    🔄 Fallback status returned')
+                try:
+                    params = {'croppableAreaIds': ca_id}
+                    response = _log_get(url, headers=headers, params=params)
+                    if response.status_code in [200, 201]:
+                        res_json = response.json()
+                        ca_data_list = res_json.get(ca_id)
+                        if ca_data_list and isinstance(ca_data_list, list) and (len(ca_data_list) > 0):
+                            ca_data = ca_data_list[0]
+                            status = ca_data.get('status')
+                            processed_row['Status'] = status
+                            if status == 'SUCCESS':
+                                processed_row['Error'] = None
+                                processed_row['Message'] = None
                             else:
-                                df_in.at[idx, 'deletion status'] = f'No request id; fallback error {fallback_resp.status_code}'
-                                print(f'    ❌ Fallback status failed: {fallback_resp.status_code}')
-                        except Exception as e:
-                            df_in.at[idx, 'deletion status'] = f'No request id; fallback exception: {e}'
-                            print(f'    ❌ Exception during fallback: {e}')
-                    time.sleep(per_status_sleep)
-                    continue
-                status_value = None
-                for attempt in range(1, max_status_attempts + 1):
-                    try:
-                        status_resp = _log_get(status_api_template.format(req_id), headers=headers, timeout=60)
-                    except Exception as e:
-                        status_value = f'Exception: {e}'
-                        print(f'    ❌ Exception while checking status for RequestId {req_id}: {e}')
-                        break
-                    if status_resp.status_code == 200:
-                        try:
-                            status_json = status_resp.json()
-                        except Exception:
-                            status_json = status_resp.text
-                        status_value = str(status_json)
-                        print(f'    🔄 Row {idx + 1}: Status retrieved')
-                        break
+                                processed_row['Error'] = ca_data.get('error')
+                                processed_row['Message'] = ca_data.get('message')
+                        else:
+                            processed_row['Status'] = 'UNKNOWN'
+                            processed_row['Error'] = 'No data returned'
+                            processed_row['Message'] = f'No status details found for CA ID {ca_id} in the response.'
                     else:
-                        status_value = f'Error {status_resp.status_code}: {status_resp.text}'
-                        print(f'    ❌ Status check attempt {attempt} failed for RequestId {req_id} (HTTP {status_resp.status_code})')
-                        if attempt < max_status_attempts:
-                            time.sleep(per_status_sleep)
-                        if attempt < max_status_attempts:
-                            time.sleep(per_status_sleep)
-                if 'Exception' in (status_value or '') or 'Error' in (status_value or ''):
-                    df_in.at[idx, 'Status'] = 'Failed'
-                else:
-                    df_in.at[idx, 'Status'] = 'Success'
-                df_in.at[idx, 'APIresponse'] = status_value or 'No status returned'
-                time.sleep(per_status_sleep)
-            return df_in
-
-        def main():
-            start_time = datetime.now()
-            print('🔄 Starting Plot deletion process...')
-            updated_df = phase1_send_deletes(df, headers, delete_api=DELETE_PLOT_API, per_call_sleep=0.4)
-            updated_df = phase2_check_status(updated_df, headers, status_api_template=STATUS_CHECK_API, post_delete_pause=8, per_status_sleep=0.4, max_status_attempts=1)
-            if len(updated_df.columns) > 0:
-                pass
-            saved = save_df_to_excel(updated_df, file_path, sheet_name)
-            if not saved:
-                print('⚠️ Could not save to original file; backup created.')
-            end_time = datetime.now()
-            elapsed = end_time - start_time
-            print('======================================================')
-            print(f'Start Time : {start_time}')
-            print(f'End Time   : {end_time}')
-            print(f'Elapsed    : {elapsed}')
-            print('======================================================')
-        print(f'📂 Loading Excel: {file_path}')
-        print('🔄 Requesting access token...')
-        if not token:
-            print('❌ Failed to retrieve token. Exiting.')
-            raise SystemExit(1)
-        wb = MockWorkbook(builtins)
-        if env_sheet_name not in wb.sheetnames:
-            raise RuntimeError(f"❌ Sheet '{env_sheet_name}' not found in workbook")
-        env_sheet = wb[env_sheet_name]
-        for r in range(2, env_sheet.max_row + 1):
-            raw = env_sheet.cell(row=r, column=1).value
-            if raw and str(raw).strip().lower() == 'environment':
-                break
-        if env_key:
-            for r in range(2, env_sheet.max_row + 1):
-                raw = env_sheet.cell(row=r, column=1).value
-                if raw and str(raw).strip().lower() == env_key.lower():
-                    env_url = base_url
-                    break
-        if not env_url:
-            env_url = builtins.env_config.get('apiBaseUrl', '')
-        print(f'🌍 Using Base URL: {env_url}')
-        df.columns = [c.strip().lower() for c in df.columns]
-        print('Columns in Excel:', df.columns.tolist())
-        print('First few rows:\n', df.head())
-        for col in ['deletion response', 'deletion status', 'request id']:
-            if col not in df.columns:
-                df[col] = ''
-            else:
-                df[col] = df[col].astype(str)
-        if 'id' not in df.columns:
-            raise RuntimeError("❌ Required column 'id' not found in Plot_details sheet")
-        if True:
-            parser = argparse.ArgumentParser(description='Plot deletion processor (standalone)')
-            parser.add_argument('--file', '-f', default=file_path, help='Path to Excel file')
-            parser.add_argument('--sheet', '-s', default=sheet_name, help='Sheet name containing plots')
-            args = parser.parse_args()
-            file_override = args.file
-            sheet_override = args.sheet
-            if file_override and file_override != file_path:
-                print(f'📂 Using file override: {file_path}')
-                wb = MockWorkbook(builtins)
-                if env_sheet_name not in wb.sheetnames:
-                    raise RuntimeError(f"❌ Sheet '{env_sheet_name}' not found in workbook")
-                env_sheet = wb[env_sheet_name]
-                for r in range(2, env_sheet.max_row + 1):
-                    raw = env_sheet.cell(row=r, column=1).value
-                    if raw and str(raw).strip().lower() == 'environment':
-                        break
-                env_url = base_url
-                if env_key:
-                    for r in range(2, env_sheet.max_row + 1):
-                        raw = env_sheet.cell(row=r, column=1).value
-                        if raw and str(raw).strip().lower() == env_key.lower():
-                            env_url = base_url
-                            break
-                if not env_url:
-                    env_url = builtins.env_config.get('apiBaseUrl', '')
-                env_url = base_url
-                DELETE_PLOT_API = f'{env_url}/services/farm/api/intelligence/croppable-areas/request'
-                STATUS_CHECK_API = f'{env_url}/services/farm/api/intelligence/croppable-areas/request/status?requestId={{}}'
-                df = builtins.data_df
-                df.columns = [c.strip().lower() for c in df.columns]
-                for col in ['deletion response', 'deletion status', 'request id']:
-                    if col not in df.columns:
-                        df[col] = ''
-                    else:
-                        df[col] = df[col].astype(str)
-            main()
-        return data
+                        processed_row['Status'] = f'API_ERROR_{response.status_code}'
+                        processed_row['Error'] = 'HTTP Error'
+                        processed_row['Message'] = f'API returned status code {response.status_code}'
+                except Exception as e:
+                    processed_row['Status'] = 'EXCEPTION'
+                    processed_row['Error'] = type(e).__name__
+                    processed_row['Message'] = str(e)
+                processed_data.append(processed_row)
+            return processed_data
+        res = _user_run(data, token, env_config)
+        try:
+            if res is None and hasattr(builtins, 'data_df'):
+                import pandas as pd
+                if isinstance(builtins.data_df, pd.DataFrame):
+                    res = builtins.data_df.where(pd.notnull(builtins.data_df), None).to_dict(orient='records')
+        except Exception as e:
+            print(f'[Warn] Failed to sync data_df to result: {e}')
+        return res
     res = _user_run(data, token, env_config)
     try:
         if res is None and hasattr(builtins, 'data_df'):

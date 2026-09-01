@@ -1,8 +1,8 @@
-# CONFIG: isMultithreaded = True
-# CONFIG: batchSize = 5
+# CONFIG: isMultithreaded = False
+# CONFIG: batchSize = 1
 # CONFIG: enableGeofencing = False
 # CONFIG: allowAdditionalAttributes = False
-# EXPECTED_INPUT_COLUMNS: Farmer Name, Farmer ID, Tag Name
+# EXPECTED_INPUT_COLUMNS: CA Name, CA ID
 
 def run(data, token, env_config):
     import pandas as pd
@@ -12,10 +12,7 @@ def run(data, token, env_config):
     import json
     import requests
     import json
-    import thread_utils
-    import builtins
     from datetime import datetime, timedelta
-    import components.master_search as master_search
 
     def _log_req(method, url, **kwargs):
 
@@ -226,136 +223,148 @@ def run(data, token, env_config):
     builtins.wk = wk
     builtins.wb = wk
     wb = wk
-    global _farmertag_list
-    _farmertag_list = []
 
     def excel_to_iso_date(val, col_name=None):
         """
-    Converts Excel serial dates (numbers) or standard date strings to ISO 8601 format (YYYY-MM-DDTHH:MM:SS.000Z).
-    Prevents conversion for non-date numeric columns.
+    Converts an Excel serial date number or a date string to ISO 8601 format (YYYY-MM-DDTHH:MM:SS.000Z).
+    Handles potential numeric serial numbers from Excel and various string formats.
+    
+    Args:
+        val: The value to convert, can be a float (Excel serial), int, or string.
+        col_name (str, optional): The name of the column. Used to determine if a numeric value
+                                   should be treated as an Excel date.
+    Returns:
+        str: ISO 8601 formatted date string, or the original value if conversion is not applicable/fails.
     """
-        if val is None or val == '':
-            return None
-        date_keywords = ['date', 'dos', 'dob', 'time', 'sowing', 'pruning', 'harvest']
-        is_date_column = col_name and any((keyword in col_name.lower() for keyword in date_keywords))
-        if isinstance(val, (int, float)):
-            if is_date_column:
+        if col_name and any((keyword in col_name.lower() for keyword in ['date', 'dos', 'dob', 'time', 'sowing', 'pruning', 'harvest'])):
+            if isinstance(val, (int, float)):
                 try:
-                    dt = datetime(1899, 12, 30) + timedelta(days=val)
-                    return dt.isoformat(timespec='milliseconds') + 'Z'
-                except Exception:
+                    if val > 0 and val < 200000:
+                        dt = datetime(1899, 12, 30) + timedelta(days=val)
+                        return dt.isoformat(timespec='milliseconds') + 'Z'
+                except (ValueError, TypeError):
                     pass
-            return val
         if isinstance(val, str):
             val = val.strip()
-            if not val:
-                return None
-            date_formats = ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%m/%d/%Y %H:%M:%S', '%m/%d/%Y', '%d-%m-%Y %H:%M:%S', '%d-%m-%Y']
-            for fmt in date_formats:
+            if val:
                 try:
-                    dt = datetime.strptime(val, fmt)
-                    return dt.isoformat(timespec='milliseconds') + 'Z'
-                except ValueError:
-                    continue
+                    for fmt in ('%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%m/%d/%Y', '%d-%m-%Y'):
+                        try:
+                            dt = datetime.strptime(val, fmt)
+                            return dt.isoformat(timespec='milliseconds') + 'Z'
+                        except ValueError:
+                            continue
+                except (ValueError, TypeError):
+                    pass
         return val
+
+    def process_row(row, token, env_config):
+        """
+    Processes a single row of data to delete a Croppable Area (CA).
+    
+    Args:
+        row (dict): A dictionary representing a single row from the Excel sheet.
+        token (str): The authorization token.
+        env_config (dict): Dictionary containing environment specific configurations
+                           like 'apiBaseUrl'.
+                           
+    Returns:
+        dict: The updated row dictionary with 'Status', 'Response', 'projectId',
+              'projectAssetId', and 'Delete Status' fields.
+    """
+        row['Status'] = 'Failed'
+        row['Response'] = ''
+        row['projectId'] = None
+        row['projectAssetId'] = None
+        row['Delete Status'] = 'Failed'
+        ca_id = row.get('CA ID')
+        ca_name = row.get('CA Name')
+        if not ca_id:
+            row['Response'] = 'CA ID is missing or empty.'
+            print(f'[ERROR] CA Name: {ca_name} - {row['Response']}')
+            return row
+        headers = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+        get_ca_url = f'{env_config.get('apiBaseUrl')}/services/farm/api/croppable-areas/{ca_id}'
+        try:
+            get_ca_response = _log_get(get_ca_url, headers=headers)
+            if not get_ca_response.ok:
+                error_message = f'Failed to retrieve CA details for CA ID {ca_id}. Status: {get_ca_response.status_code}. Response: {get_ca_response.text}'
+                row['Response'] = error_message
+                print(f'[GET_CA] {ca_id} → Failed. {error_message}')
+                return row
+            get_ca_json = get_ca_response.json()
+            project_id = get_ca_json.get('projectId')
+            project_asset_id = get_ca_json.get('projectAssetId')
+            row['projectId'] = project_id
+            row['projectAssetId'] = project_asset_id
+            print(f'[GET_CA] CA ID: {ca_id} → Project ID: {project_id}, Project Asset ID: {project_asset_id}')
+            if not project_id:
+                row['Response'] = f"Missing 'projectId' in Get_CA response for CA ID {ca_id}."
+                print(f'[ERROR] CA ID: {ca_id} - {row['Response']}')
+                return row
+            if not project_asset_id:
+                row['Response'] = f"Missing 'projectAssetId' in Get_CA response for CA ID {ca_id}."
+                print(f'[ERROR] CA ID: {ca_id} - {row['Response']}')
+                return row
+        except requests.exceptions.RequestException as e:
+            row['Response'] = f'Network or API error during Get_CA for CA ID {ca_id}: {str(e)}'
+            print(f'[ERROR] CA ID: {ca_id} - {row['Response']}')
+            return row
+        except json.JSONDecodeError:
+            row['Response'] = f'Failed to decode JSON from Get_CA response for CA ID {ca_id}. Response: {get_ca_response.text}'
+            print(f'[ERROR] CA ID: {ca_id} - {row['Response']}')
+            return row
+        delete_ca_url = f'{env_config.get('apiBaseUrl')}/services/farm/api/projects/{project_id}/project-assets/selected-ids?ids={project_asset_id}&croppableAreaIds={ca_id}'
+        try:
+            delete_ca_response = _log_delete(delete_ca_url, headers=headers)
+            if not delete_ca_response.ok:
+                error_message = f'Failed to delete CA for CA ID {ca_id}. Status: {delete_ca_response.status_code}. Response: {delete_ca_response.text}'
+                row['Response'] = error_message
+                row['Delete Status'] = 'Failed'
+                print(f'[DELETE_CA] {ca_id} → Failed. {error_message}')
+                return row
+            delete_ca_json = delete_ca_response.json()
+            if delete_ca_json.get('deletable') == 1:
+                row['Status'] = 'Success'
+                row['Delete Status'] = 'Success'
+                row['Response'] = 'CA deleted successfully.'
+                print(f'[DELETE_CA] CA ID: {ca_id} → Deletable: 1. Status: Success.')
+            else:
+                row['Status'] = 'Failed'
+                row['Delete Status'] = 'Failed'
+                non_deletable_count = delete_ca_json.get('nonDeletable', 0)
+                row['Response'] = f'CA delete request returned non-deletable status (count: {non_deletable_count}).'
+                print(f'[DELETE_CA] CA ID: {ca_id} → Deletable: {delete_ca_json.get('deletable')}. Status: Failed. {row['Response']}')
+        except requests.exceptions.RequestException as e:
+            row['Response'] = f'Network or API error during Delete_CA for CA ID {ca_id}: {str(e)}'
+            row['Delete Status'] = 'Failed'
+            print(f'[ERROR] CA ID: {ca_id} - {row['Response']}')
+            return row
+        except json.JSONDecodeError:
+            row['Response'] = f'Failed to decode JSON from Delete_CA response for CA ID {ca_id}. Response: {delete_ca_response.text}'
+            row['Delete Status'] = 'Failed'
+            print(f'[ERROR] CA ID: {ca_id} - {row['Response']}')
+            return row
+        return row
 
     def _user_run(data, token, env_config):
         """
-    Main function to orchestrate the processing of rows in parallel.
+    Main function to orchestrate the deletion of Croppable Areas based on provided data.
+    
+    Args:
+        data (list of dict): List of rows, where each row is a dictionary 
+                             representing input Excel data.
+        token (str): Authorization token.
+        env_config (dict): Environment specific configurations.
+        
+    Returns:
+        list of dict: List of processed rows with updated status and response.
     """
-        global _farmertag_list
-        with _lock:
-            if not _farmertag_list:
-                print('[FARMER_TAG_MASTER] Fetching all farmer tags...')
-                _farmertag_list = master_search.fetch_all('farmertag', env_config)
-                if not _farmertag_list:
-                    print('[FARMER_TAG_MASTER] No farmer tags found or failed to fetch.')
-                else:
-                    print(f'[FARMER_TAG_MASTER] Fetched {len(_farmertag_list)} farmer tags.')
-        return thread_utils.run_in_parallel(process_func=process_row, items=data, token=token, env_config=env_config)
-
-    def process_row(row):
-        """
-    Processes a single row of data to add a farmer tag.
-    """
-        env_config = builtins.env_config
-        headers = {'Authorization': f'Bearer {token}'}
-        row['Farmer Name'] = row.get('Farmer Name')
-        row['Farmer ID'] = row.get('Farmer ID')
-        row['Tag Name'] = row.get('Tag Name')
-        row['Status'] = 'Fail'
-        row['Response'] = ''
-        row['Tag ID'] = ''
-        farmer_id = row.get('Farmer ID')
-        tag_name = row.get('Tag Name')
-        if not farmer_id:
-            row['Response'] = 'Farmer ID is missing.'
-            return row
-        if not tag_name:
-            row['Response'] = 'Tag Name is missing.'
-            return row
-        with _lock:
-            tag_lookup_result = master_search.lookup_from_cache(_farmertag_list, 'name', tag_name, 'id')
-        if not tag_lookup_result['found']:
-            row['Status'] = 'Fail'
-            row['Response'] = tag_lookup_result['message'] or 'Tag not found'
-            print(f'[FARMER_TAG_MASTER] {tag_name} → ID: Not Found')
-            return row
-        tag_id = tag_lookup_result['value']
-        row['Tag ID'] = tag_id
-        print(f'[FARMER_TAG_MASTER] {tag_name} → ID: {tag_id}')
-        fetch_farmer_url = f'{base_url}/services/farm/api/farmers/{farmer_id}'
-        try:
-            fetch_resp = _log_get(fetch_farmer_url, headers=headers)
-            if not fetch_resp.ok:
-                row['Response'] = f'Failed to fetch farmer details: {fetch_resp.status_code} - {fetch_resp.text}'
-                return row
-            farmer_data = fetch_resp.json()
-            print(f'[API_DEBUG] Fetched farmer {farmer_id} details successfully.')
-        except requests.exceptions.RequestException as e:
-            row['Response'] = f'API request failed while fetching farmer details: {e}'
-            return row
-        except json.JSONDecodeError:
-            row['Response'] = f'Failed to decode JSON from farmer details API: {fetch_resp.text}'
-            return row
-        current_tags = (farmer_data.get('data') or {}).get('tags', [])
-        if not isinstance(current_tags, list):
-            current_tags = []
-        current_tags = [t for t in current_tags if isinstance(t, int)]
-        updated_tags = list(current_tags)
-        tag_added = False
-        if tag_id not in updated_tags:
-            updated_tags.append(tag_id)
-            farmer_data['data']['tags'] = updated_tags
-            tag_added = True
-            print(f"[LOGIC] Tag {tag_id} ('{tag_name}') added to farmer's tag list.")
-        else:
-            row['Status'] = 'Pass'
-            row['Response'] = 'Tag already associated with farmer'
-            print(f"[LOGIC] Tag {tag_id} ('{tag_name}') already associated with farmer {farmer_id}. Skipping update.")
-            return row
-        update_farmer_url = f'{base_url}/services/farm/api/farmers'
-        payload_data = farmer_data
-        files = {'dto': (None, json.dumps(payload_data), 'application/json')}
-        try:
-            put_resp = _log_put(update_farmer_url, headers=headers, files=files)
-            if put_resp.ok:
-                row['Status'] = 'Pass'
-                row['Response'] = 'Tag updated to farmer'
-                print(f'[API_DEBUG] Farmer {farmer_id} tags updated successfully with tag {tag_id}.')
-            else:
-                row['Status'] = 'Fail'
-                row['Response'] = f'Failed to update farmer tags: {put_resp.status_code} - {put_resp.text}'
-                print(f'[API_DEBUG] Failed to update farmer {farmer_id} tags: {put_resp.status_code} - {put_resp.text}')
-        except requests.exceptions.RequestException as e:
-            row['Status'] = 'Fail'
-            row['Response'] = f'API request failed while updating farmer tags: {e}'
-        except json.JSONDecodeError:
-            row['Status'] = 'Fail'
-            row['Response'] = f'Failed to decode JSON from farmer update API: {put_resp.text}'
-        return row
-    "\nOUTPUT MAPPING CONFIGURATION:\n- UI Output Definition:\n- UI Column 'Farmer Name': Set to '' (Logic: from excel)\n- UI Column 'Farmer ID': Set to '' (Logic: from excel)\n- UI Column 'Tag Name': Set to '' (Logic: from excel)\n- UI Column 'Status': Set to '' (Logic: Pass if farmer update API status code is 200 or 201, else Fail)\n- Excel Output Definition:\n   - Column 'Tag ID': Set to '' (Logic: attribute 'id' from tag API response)\n   - Column 'Status': Set to '' (Logic: 'Fail' if tag not found or if status code of farmer update is not 200\n'Pass' if status of farmer update is 200 or 201)\n   - Column 'Response': Set to '' (Logic: 'Tag not found' if tag not found or \nwhole response of farmer update if status code is not 200\n'Tag updated to farmer' if farmer update response code is 200 or 201)\n"
-    _lock = thread_utils.create_lock()
+        results = []
+        for row in data:
+            processed_row = process_row(row.copy(), token, env_config)
+            results.append(processed_row)
+        return results
     res = _user_run(data, token, env_config)
     try:
         if res is None and hasattr(builtins, 'data_df'):

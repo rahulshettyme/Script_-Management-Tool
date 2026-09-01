@@ -373,4 +373,113 @@
     .eh-filter-group {
         min-width: 100%;
     }
+    /* Turn table into card layout */
+    .eh-table-wrapper {
+        border: none;
+        background: none;
+    }
+    .eh-table, .eh-table thead, .eh-table tbody, .eh-table th, .eh-table td, .eh-table tr {
+        display: block;
+    }
+    .eh-table thead tr {
+        position: absolute;
+        top: -9999px;
+        left: -9999px;
+    }
+    .eh-table tbody tr {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        margin-bottom: 1.25rem;
+        padding: 0.75rem 1rem;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+    .eh-table tbody tr:hover {
+        background: #ffffff; /* Override desktop hover background */
+    }
+    .eh-table td {
+        border-bottom: 1px solid #f1f5f9;
+        position: relative;
+        padding: 0.75rem 0 0.75rem 45%;
+        text-align: right;
+        font-size: 0.85rem;
+        min-height: 2.5rem;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+    }
+    .eh-table td:last-child {
+        border-bottom: none;
+    }
+    .eh-table td::before {
+        content: attr(data-label);
+        position: absolute;
+        left: 0;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 40%;
+        text-align: left;
+        font-weight: 600;
+        color: #64748b;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+}
+
+/* ---- Consent & Feedback Tooltip Styles ---- */
+.eh-consent-cell {
+    position: relative;
+    display: inline-block;
+    cursor: pointer;
+}
+
+.eh-consent-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    background: #e8f5e9;
+    color: #2e7d32;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.eh-consent-tooltip {
+    visibility: hidden;
+    opacity: 0;
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background-color: #1e293b;
+    color: #f8fafc;
+    text-align: left;
+    border-radius: 6px;
+    padding: 10px 12px;
+    z-index: 1000;
+    width: 260px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3), 0 4px 6px -2px rgba(0, 0, 0, 0.1);
+    font-size: 0.8rem;
+    line-height: 1.4;
+    transition: opacity 0.2s, visibility 0.2s;
+    border: 1px solid #334155;
+    pointer-events: none;
+    white-space: normal;
+    margin-top: 8px;
+}
+
+.eh-consent-tooltip::after {
+    content: "";
+    position: absolute;
+    bottom: 100%;
+    right: 20px;
+    margin-left: -5px;
+    border-width: 5px;
+    border-style: solid;
+    border-color: transparent transparent #1e293b transparent;
+}
+
+.eh-consent-cell:hover .eh-consent-tooltip {
+    visibility: visible;
+    opacity: 1;
 }

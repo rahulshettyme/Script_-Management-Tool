@@ -6,5 +6,7 @@
   "groupByColumn": "",
   "isMultithreaded": true,
   "batchSize": 10,
-  "mtime": 1769853515450
+  "mtime": 1769853515450,
+  "name": "PR Disable",
+  "filename": "PR_Disable.py"
 }

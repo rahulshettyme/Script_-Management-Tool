@@ -244,10 +244,10 @@ def run(data, token, env_config):
             first_row = data[0]
             if first_row.get('latitude') is not None and str(first_row.get('latitude')).strip() != '' and (first_row.get('longitude') is not None) and (str(first_row.get('longitude')).strip() != ''):
                 _use_lat_lng_for_geo_method = True
-            print(f'[GEO_INIT] Geo method determined: {('Latitude/Longitude' if _use_lat_lng_for_geo_method else 'Address')}')
+            print(f"[GEO_INIT] Geo method determined: {('Latitude/Longitude' if _use_lat_lng_for_geo_method else 'Address')}")
             if first_row.get('tag_id') is not None and str(first_row.get('tag_id')).strip() != '':
                 _use_provided_tag_ids = True
-            print(f'[MASTER_INIT] Tag ID lookup method: {('Provided IDs' if _use_provided_tag_ids else 'Search by Name')}')
+            print(f"[MASTER_INIT] Tag ID lookup method: {('Provided IDs' if _use_provided_tag_ids else 'Search by Name')}")
         return thread_utils.run_in_parallel(process_func=process_row, items=data, token=token, env_config=env_config)
 
     def process_row(row):
@@ -288,7 +288,7 @@ def run(data, token, env_config):
                 with _plottag_lock:
                     result = master_search.search('plottag', tags_input, builtins.env_config, _plottag_cache)
                 if not result['found']:
-                    row['Response'] = f'Tag not found: {result['message']}'
+                    row['Response'] = f"Tag not found: {result['message']}"
                     print(f'[PLTTAG_LOOKUP] {tags_input} → Result: Not Found')
                     return row
                 tag_id = result['value']
@@ -334,7 +334,7 @@ def run(data, token, env_config):
                     return row
                 address_component = geofence_utils.parse_address_component(geocode_result)
                 _geocode_cache[location_input] = address_component
-                print(f'[GEOFENCE] {location_input} → lat={address_component.get('latitude', 'N/A'):.6f}, lng={address_component.get('longitude', 'N/A'):.6f}')
+                print(f"[GEOFENCE] {location_input} → lat={address_component.get('latitude', 'N/A'):.6f}, lng={address_component.get('longitude', 'N/A'):.6f}")
         place_address_payload = {'country': address_component.get('country'), 'formattedAddress': address_component.get('formattedAddress'), 'administrativeAreaLevel1': address_component.get('administrativeAreaLevel1'), 'locality': address_component.get('locality'), 'administrativeAreaLevel2': address_component.get('administrativeAreaLevel2'), 'sublocalityLevel1': address_component.get('sublocalityLevel1', ''), 'sublocalityLevel2': address_component.get('sublocalityLevel2', ''), 'landmark': address_component.get('landmark', ''), 'postalCode': address_component.get('postalCode', ''), 'houseNo': address_component.get('houseNo', ''), 'buildingName': address_component.get('buildingName', ''), 'placeId': address_component.get('placeId'), 'latitude': address_component.get('latitude'), 'longitude': address_component.get('longitude')}
         if not _use_lat_lng_for_geo_method:
             lat_for_payload_root = place_address_payload.get('latitude')

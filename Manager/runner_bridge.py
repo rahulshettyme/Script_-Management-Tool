@@ -68,6 +68,24 @@ def run_script(target_script, data, token, env_config):
 
     print("DEBUG: Runner Loaded", flush=True)
 
+    # Automatically resolve companyId if missing but token and apiBaseUrl are present
+    if token and env_config.get('apiBaseUrl') and 'companyId' not in env_config:
+        try:
+            import requests
+            api_base = env_config['apiBaseUrl']
+            if api_base.endswith('/'):
+                api_base = api_base[:-1]
+            headers = {'Authorization': token if token.startswith('Bearer ') else f'Bearer {token}'}
+            resp = requests.get(f"{api_base}/services/user/api/users/user-info", headers=headers, timeout=10)
+            if resp.ok:
+                company_id = resp.json().get('companyId')
+                if company_id:
+                    env_config['companyId'] = company_id
+                    env_config['company_id'] = company_id
+                    print(f"DEBUG: Automatically resolved companyId: {company_id}", flush=True)
+        except Exception as e:
+            print(f"DEBUG: Failed to auto-resolve companyId: {e}", flush=True)
+
     # env_config is now passed as a fully loaded dict from __main__
         
     # 2. Load User Script
@@ -116,6 +134,18 @@ def run_script(target_script, data, token, env_config):
         # Run the script
         results = module.run(data, token, env_config)
 
+        # Merge input data with output results to preserve all input columns
+        if isinstance(results, list) and isinstance(data, list):
+            merged_results = []
+            for i, res_row in enumerate(results):
+                if i < len(data) and isinstance(data[i], dict) and isinstance(res_row, dict):
+                    # Merge input row with output row (output row values override input row)
+                    merged_row = {**data[i], **res_row}
+                    merged_results.append(merged_row)
+                else:
+                    merged_results.append(res_row)
+            results = merged_results
+
         # 4b. CHECK FOR EXCEL OUTPUT AND DUMP
         # 4b. CHECK FOR EXCEL OUTPUT AND DUMP
         if os.path.exists(excel_out_path):
@@ -144,20 +174,19 @@ def run_script(target_script, data, token, env_config):
                         else:
                             desired_order.append(str(c))
                     
-                    # 1. Identify columns that are in the dataframe but NOT in the desired order (extra columns)
                     existing_cols = df_out.columns.tolist()
-                    extra_cols = [c for c in existing_cols if c not in desired_order]
                     
-                    # 2. Identify columns that are in the desired order but MISSING from dataframe
-                    # (Optional: we could add them as empty, but pandas reindex handles this with NaN)
+                    # Extract configured additional attributes if present
+                    additional_attrs = env_config.get('additionalAttributes', []) if isinstance(env_config, dict) else []
                     
-                    # 3. Construct final order: Desired Columns + Extra Columns
-                    # Filter desired_order to only include those that actually exist (or let reindex add NaNs)
-                    # We usually want to force the desired structure, so we keep all desired_order.
-                    final_order = desired_order + extra_cols
+                    # Group columns into Input -> Additional Attributes -> Outputs/Remaining
+                    input_cols = [c for c in desired_order if c in existing_cols]
+                    attr_cols = [c for c in additional_attrs if c in existing_cols and c not in input_cols]
+                    remaining_cols = [c for c in existing_cols if c not in input_cols and c not in attr_cols]
                     
-                    # 4. Reindex the dataframe
-                    # Using reindex will add NaNs for missing desired columns, which is good behavior
+                    final_order = input_cols + attr_cols + remaining_cols
+                    
+                    # Reindex the dataframe
                     df_out = df_out.reindex(columns=final_order)
 
                 print("\n[OUTPUT_DATA_DUMP]")

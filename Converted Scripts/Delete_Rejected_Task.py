@@ -1,8 +1,6 @@
-# CONFIG: isMultithreaded = True
-# CONFIG: batchSize = 5
 # CONFIG: enableGeofencing = False
 # CONFIG: allowAdditionalAttributes = False
-# EXPECTED_INPUT_COLUMNS: Farmer Name, Farmer ID, Tag Name
+# EXPECTED_INPUT_COLUMNS: CA_Name, Task_ID, Task_Name
 
 def run(data, token, env_config):
     import pandas as pd
@@ -14,8 +12,6 @@ def run(data, token, env_config):
     import json
     import thread_utils
     import builtins
-    from datetime import datetime, timedelta
-    import components.master_search as master_search
 
     def _log_req(method, url, **kwargs):
 
@@ -226,136 +222,63 @@ def run(data, token, env_config):
     builtins.wk = wk
     builtins.wb = wk
     wb = wk
-    global _farmertag_list
-    _farmertag_list = []
-
-    def excel_to_iso_date(val, col_name=None):
-        """
-    Converts Excel serial dates (numbers) or standard date strings to ISO 8601 format (YYYY-MM-DDTHH:MM:SS.000Z).
-    Prevents conversion for non-date numeric columns.
-    """
-        if val is None or val == '':
-            return None
-        date_keywords = ['date', 'dos', 'dob', 'time', 'sowing', 'pruning', 'harvest']
-        is_date_column = col_name and any((keyword in col_name.lower() for keyword in date_keywords))
-        if isinstance(val, (int, float)):
-            if is_date_column:
-                try:
-                    dt = datetime(1899, 12, 30) + timedelta(days=val)
-                    return dt.isoformat(timespec='milliseconds') + 'Z'
-                except Exception:
-                    pass
-            return val
-        if isinstance(val, str):
-            val = val.strip()
-            if not val:
-                return None
-            date_formats = ['%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ', '%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d', '%m/%d/%Y %H:%M:%S', '%m/%d/%Y', '%d-%m-%Y %H:%M:%S', '%d-%m-%Y']
-            for fmt in date_formats:
-                try:
-                    dt = datetime.strptime(val, fmt)
-                    return dt.isoformat(timespec='milliseconds') + 'Z'
-                except ValueError:
-                    continue
-        return val
-
-    def _user_run(data, token, env_config):
-        """
-    Main function to orchestrate the processing of rows in parallel.
-    """
-        global _farmertag_list
-        with _lock:
-            if not _farmertag_list:
-                print('[FARMER_TAG_MASTER] Fetching all farmer tags...')
-                _farmertag_list = master_search.fetch_all('farmertag', env_config)
-                if not _farmertag_list:
-                    print('[FARMER_TAG_MASTER] No farmer tags found or failed to fetch.')
-                else:
-                    print(f'[FARMER_TAG_MASTER] Fetched {len(_farmertag_list)} farmer tags.')
-        return thread_utils.run_in_parallel(process_func=process_row, items=data, token=token, env_config=env_config)
 
     def process_row(row):
         """
-    Processes a single row of data to add a farmer tag.
+    Processes a single row of data to delete a task via API.
+    Modifies the input 'row' dictionary in place to include Status and Response,
+    and ensures required output keys are present.
     """
-        env_config = builtins.env_config
-        headers = {'Authorization': f'Bearer {token}'}
-        row['Farmer Name'] = row.get('Farmer Name')
-        row['Farmer ID'] = row.get('Farmer ID')
-        row['Tag Name'] = row.get('Tag Name')
-        row['Status'] = 'Fail'
+        row['CA_Name'] = row.get('CA_Name', '')
+        row['Task_ID'] = row.get('Task_ID', '')
+        row['Task_Name'] = row.get('Task_Name', '')
+        row['Status'] = 'Failed'
         row['Response'] = ''
-        row['Tag ID'] = ''
-        farmer_id = row.get('Farmer ID')
-        tag_name = row.get('Tag Name')
-        if not farmer_id:
-            row['Response'] = 'Farmer ID is missing.'
+        task_id = row.get('Task_ID')
+        if not task_id:
+            row['Status'] = 'Failed'
+            row['Response'] = 'Task_ID is missing or empty from the input row.'
             return row
-        if not tag_name:
-            row['Response'] = 'Tag Name is missing.'
-            return row
-        with _lock:
-            tag_lookup_result = master_search.lookup_from_cache(_farmertag_list, 'name', tag_name, 'id')
-        if not tag_lookup_result['found']:
-            row['Status'] = 'Fail'
-            row['Response'] = tag_lookup_result['message'] or 'Tag not found'
-            print(f'[FARMER_TAG_MASTER] {tag_name} → ID: Not Found')
-            return row
-        tag_id = tag_lookup_result['value']
-        row['Tag ID'] = tag_id
-        print(f'[FARMER_TAG_MASTER] {tag_name} → ID: {tag_id}')
-        fetch_farmer_url = f'{base_url}/services/farm/api/farmers/{farmer_id}'
+        headers = {'Authorization': f'Bearer {builtins.token}'}
+        api_url = f'{base_url}/services/farm/api/tasks/bulk?ids={task_id}'
         try:
-            fetch_resp = _log_get(fetch_farmer_url, headers=headers)
-            if not fetch_resp.ok:
-                row['Response'] = f'Failed to fetch farmer details: {fetch_resp.status_code} - {fetch_resp.text}'
-                return row
-            farmer_data = fetch_resp.json()
-            print(f'[API_DEBUG] Fetched farmer {farmer_id} details successfully.')
-        except requests.exceptions.RequestException as e:
-            row['Response'] = f'API request failed while fetching farmer details: {e}'
-            return row
-        except json.JSONDecodeError:
-            row['Response'] = f'Failed to decode JSON from farmer details API: {fetch_resp.text}'
-            return row
-        current_tags = (farmer_data.get('data') or {}).get('tags', [])
-        if not isinstance(current_tags, list):
-            current_tags = []
-        current_tags = [t for t in current_tags if isinstance(t, int)]
-        updated_tags = list(current_tags)
-        tag_added = False
-        if tag_id not in updated_tags:
-            updated_tags.append(tag_id)
-            farmer_data['data']['tags'] = updated_tags
-            tag_added = True
-            print(f"[LOGIC] Tag {tag_id} ('{tag_name}') added to farmer's tag list.")
-        else:
-            row['Status'] = 'Pass'
-            row['Response'] = 'Tag already associated with farmer'
-            print(f"[LOGIC] Tag {tag_id} ('{tag_name}') already associated with farmer {farmer_id}. Skipping update.")
-            return row
-        update_farmer_url = f'{base_url}/services/farm/api/farmers'
-        payload_data = farmer_data
-        files = {'dto': (None, json.dumps(payload_data), 'application/json')}
-        try:
-            put_resp = _log_put(update_farmer_url, headers=headers, files=files)
-            if put_resp.ok:
-                row['Status'] = 'Pass'
-                row['Response'] = 'Tag updated to farmer'
-                print(f'[API_DEBUG] Farmer {farmer_id} tags updated successfully with tag {tag_id}.')
+            response = _log_delete(api_url, headers=headers)
+            response.raise_for_status()
+            response_json = response.json()
+            deletable_status = response_json.get('deletable')
+            if deletable_status == 1:
+                row['Status'] = 'Success'
+                row['Response'] = 'Task deleted successfully.'
             else:
-                row['Status'] = 'Fail'
-                row['Response'] = f'Failed to update farmer tags: {put_resp.status_code} - {put_resp.text}'
-                print(f'[API_DEBUG] Failed to update farmer {farmer_id} tags: {put_resp.status_code} - {put_resp.text}')
+                row['Status'] = 'Failed'
+                row['Response'] = f'API reported task as non-deletable. Response: {response_json}'
+        except requests.exceptions.HTTPError as e:
+            row['Status'] = 'Failed'
+            response_text = e.response.text if e.response is not None else 'No response body'
+            row['Response'] = f'HTTP error occurred: {e}. Details: {response_text}'
+        except requests.exceptions.ConnectionError as e:
+            row['Status'] = 'Failed'
+            row['Response'] = f'Connection error occurred: {e}'
+        except requests.exceptions.Timeout as e:
+            row['Status'] = 'Failed'
+            row['Response'] = f'Request timed out: {e}'
         except requests.exceptions.RequestException as e:
-            row['Status'] = 'Fail'
-            row['Response'] = f'API request failed while updating farmer tags: {e}'
+            row['Status'] = 'Failed'
+            row['Response'] = f'An unexpected request error occurred: {e}'
         except json.JSONDecodeError:
-            row['Status'] = 'Fail'
-            row['Response'] = f'Failed to decode JSON from farmer update API: {put_resp.text}'
+            row['Status'] = 'Failed'
+            row['Response'] = f'Failed to decode JSON response from API. Raw response: {response.text}'
+        except Exception as e:
+            row['Status'] = 'Failed'
+            row['Response'] = f'An unhandled error occurred: {e}'
         return row
-    "\nOUTPUT MAPPING CONFIGURATION:\n- UI Output Definition:\n- UI Column 'Farmer Name': Set to '' (Logic: from excel)\n- UI Column 'Farmer ID': Set to '' (Logic: from excel)\n- UI Column 'Tag Name': Set to '' (Logic: from excel)\n- UI Column 'Status': Set to '' (Logic: Pass if farmer update API status code is 200 or 201, else Fail)\n- Excel Output Definition:\n   - Column 'Tag ID': Set to '' (Logic: attribute 'id' from tag API response)\n   - Column 'Status': Set to '' (Logic: 'Fail' if tag not found or if status code of farmer update is not 200\n'Pass' if status of farmer update is 200 or 201)\n   - Column 'Response': Set to '' (Logic: 'Tag not found' if tag not found or \nwhole response of farmer update if status code is not 200\n'Tag updated to farmer' if farmer update response code is 200 or 201)\n"
-    _lock = thread_utils.create_lock()
+
+    def _user_run(data, token, env_config):
+        """
+    Main function to orchestrate parallel processing of task deletion.
+    It passes the processing function and data to thread_utils.run_in_parallel.
+    """
+        return thread_utils.run_in_parallel(process_func=process_row, items=data, token=token, env_config=env_config)
     res = _user_run(data, token, env_config)
     try:
         if res is None and hasattr(builtins, 'data_df'):

@@ -1,6 +1,8 @@
+# CONFIG: isMultithreaded = True
+# CONFIG: batchSize = 10
 # CONFIG: enableGeofencing = False
 # CONFIG: allowAdditionalAttributes = True
-# EXPECTED_INPUT_COLUMNS: Farmer Name, Farmer Code, Phone Number, AssignedTo, UserID, Address, Address Component (non mandatory), Status, Farmer ID, Response
+# EXPECTED_INPUT_COLUMNS: Farmer Name, Farmer Code, Phone Number, AssignedTo User ID, Address
 
 def run(data, token, env_config):
     import pandas as pd
@@ -13,7 +15,7 @@ def run(data, token, env_config):
     import thread_utils
     import builtins
     import components.geofence_utils as geofence_utils
-    import components.master_search as master_search
+    from datetime import datetime, timedelta
 
     def _log_req(method, url, **kwargs):
 
@@ -224,136 +226,173 @@ def run(data, token, env_config):
     builtins.wk = wk
     builtins.wb = wk
     wb = wk
-    global _user_cache, _use_provided_user_ids, _geocode_cache
+    global _geocode_cache, _use_provided_user_ids
     _geocode_cache = {}
-    _user_cache = {}
     _use_provided_user_ids = False
+
+    def excel_to_iso_date(val, col_name=None):
+        """
+    Converts Excel serial dates or date strings to ISO 8601 format (YYYY-MM-DDTHH:MM:SS.000Z).
+    Applies safeguards to prevent non-date columns from being incorrectly converted.
+    """
+        if val is None or val == '':
+            return None
+        date_keywords = ['date', 'dos', 'dob', 'time', 'sowing', 'pruning', 'harvest']
+        is_date_column = col_name and any((keyword in col_name.lower() for keyword in date_keywords))
+        if isinstance(val, (int, float)):
+            if is_date_column:
+                try:
+                    if val > 59:
+                        val -= 1
+                    dt = datetime(1899, 12, 30) + timedelta(days=val)
+                    return dt.isoformat(timespec='milliseconds') + 'Z'
+                except OverflowError:
+                    pass
+            return val
+        elif isinstance(val, str):
+            val_strip = val.strip()
+            for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%d-%m-%Y', '%Y-%m-%dT%H:%M:%S.%fZ', '%Y-%m-%dT%H:%M:%SZ'):
+                try:
+                    dt = datetime.strptime(val_strip, fmt)
+                    return dt.isoformat(timespec='milliseconds') + 'Z'
+                except ValueError:
+                    continue
+            return val_strip
+        return val
 
     def _user_run(data, token, env_config):
         """
-    Main function to orchestrate the processing of farmer data.
+    Main function to initiate parallel processing of farmer data.
     """
         builtins.token = token
         builtins.env_config = env_config
         global _use_provided_user_ids
-        _use_provided_user_ids = bool(data and data[0].get('UserID'))
+        _use_provided_user_ids = bool(data and data[0].get('AssignedTo User ID') is not None)
         return thread_utils.run_in_parallel(process_func=process_row, items=data, token=token, env_config=env_config)
 
     def process_row(row):
         """
-    Processes a single row of farmer data from the Excel sheet.
+    Processes a single row of farmer data: geocodes address, validates phone,
+    and creates a farmer via API.
     """
         row['Status'] = 'Fail'
-        row['Response'] = 'Processing started'
+        row['Response'] = ''
         row['Farmer ID'] = 'NA'
-        farmer_name_ui = row.get('Farmer Name', '')
-        address_input = row.get('Address', '').strip()
-        address_component_payload = {}
-        if not address_input:
-            row['Response'] = 'Address is empty'
+        row['Farmer Name'] = row.get('Farmer Name', '')
+        farmer_name = row.get('Farmer Name')
+        farmer_code = row.get('Farmer Code')
+        phone_number_raw = str(row.get('Phone Number', '')).strip()
+        assigned_to_user_id = row.get('AssignedTo User ID')
+        address_str = row.get('Address')
+        if not farmer_name:
+            row['Response'] = 'Farmer Name is missing.'
+            print(f'[{farmer_code or 'N/A'}] Farmer Name is missing.')
             return row
-        with _geocode_lock:
-            if address_input in _geocode_cache:
-                address_component = _geocode_cache[address_input]
-                print(f'[GEOFENCE] {address_input} (cached) → lat={address_component.get('latitude', 'N/A'):.6f}, lng={address_component.get('longitude', 'N/A'):.6f}')
-            else:
-                try:
-                    geocode_result = geofence_utils.get_boundary(address_input, builtins.env_config.get('Geocoding_api_key'))
-                    if not geocode_result:
-                        row['Response'] = f'Geocoding failed for address: {address_input}'
-                        print(f'[GEOFENCE] {address_input} → Result: Not Found')
-                        return row
-                    address_component = geofence_utils.parse_address_component(geocode_result)
-                    _geocode_cache[address_input] = address_component
-                    print(f'[GEOFENCE] {address_input} → lat={address_component.get('latitude', 'N/A'):.6f}, lng={address_component.get('longitude', 'N/A'):.6f}')
-                except Exception as e:
-                    row['Response'] = f'Error during geocoding: {str(e)}'
-                    print(f'[GEOFENCE] {address_input} → Error: {str(e)}')
-                    return row
-        address_component_output_payload = {'id': None, 'formattedAddress': address_component.get('formattedAddress'), 'postalCode': address_component.get('postalCode'), 'locality': address_component.get('locality'), 'data': None, 'administrativeAreaLevel5': address_component.get('administrativeAreaLevel5'), 'administrativeAreaLevel4': address_component.get('administrativeAreaLevel4'), 'administrativeAreaLevel3': address_component.get('administrativeAreaLevel3'), 'administrativeAreaLevel2': address_component.get('administrativeAreaLevel2'), 'administrativeAreaLevel1': address_component.get('administrativeAreaLevel1'), 'country': address_component.get('country'), 'latitude': address_component.get('latitude'), 'longitude': address_component.get('longitude'), 'placeId': address_component.get('placeId'), 'sublocalityLevel1': address_component.get('sublocalityLevel1', ''), 'sublocalityLevel2': address_component.get('sublocalityLevel2', ''), 'sublocalityLevel3': address_component.get('sublocalityLevel3'), 'sublocalityLevel4': address_component.get('sublocalityLevel4'), 'sublocalityLevel5': address_component.get('sublocalityLevel5'), 'houseNo': address_component.get('houseNo', ''), 'buildingName': address_component.get('buildingName', ''), 'landmark': address_component.get('landmark', ''), 'clientId': builtins.env_config.get('clientId', None)}
-        for key in ['sublocalityLevel1', 'sublocalityLevel2', 'houseNo', 'buildingName', 'landmark']:
-            if address_component_output_payload.get(key) is None:
-                address_component_output_payload[key] = ''
-        for key in ['id', 'data', 'administrativeAreaLevel5', 'administrativeAreaLevel4', 'administrativeAreaLevel3', 'sublocalityLevel3', 'sublocalityLevel4', 'sublocalityLevel5', 'clientId']:
-            if address_component_output_payload.get(key) is None:
-                address_component_output_payload[key] = None
-        row['Address Component (non mandatory)'] = json.dumps(address_component_output_payload)
-        assigned_to_name = row.get('AssignedTo', '').strip()
-        user_id = None
-        if not assigned_to_name:
-            row['Response'] = 'AssignedTo name is empty'
+        if not farmer_code:
+            row['Response'] = 'Farmer Code is missing.'
+            print(f'[{farmer_name}] Farmer Code is missing.')
             return row
-        if _use_provided_user_ids:
-            user_id = row.get('UserID')
-            if not user_id:
-                row['Status'] = 'Fail'
-                row['Response'] = 'UserID is empty (Strict Mode)'
-                print(f'[USER_LOOKUP] {assigned_to_name} → ID: Not Found (Empty in Strict Mode)')
-                return row
-            print(f'[USER_LOOKUP] {assigned_to_name} → ID: {user_id} (Provided)')
-        else:
-            user_result = master_search.search('user', assigned_to_name, builtins.env_config, _user_cache)
-            if not user_result['found']:
-                row['Status'] = 'Fail'
-                row['Response'] = user_result['message']
-                print(f'[USER_LOOKUP] {assigned_to_name} → ID: Not Found')
-                return row
-            user_id = user_result['value']
-            print(f'[USER_LOOKUP] {assigned_to_name} → ID: {user_id}')
-        row['UserID'] = user_id
-        phone_raw = str(row.get('Phone Number', '')).strip()
-        farmer_first_name = row.get('Farmer Name', '').strip()
-        farmer_code = row.get('Farmer Code', '').strip()
-        if ' ' in phone_raw:
-            parts = phone_raw.split(' ')
-        elif '-' in phone_raw:
-            parts = phone_raw.split('-')
-        else:
-            row['Status'] = 'Fail'
+        if not phone_number_raw:
+            row['Response'] = 'Phone Number is missing.'
+            print(f'[{farmer_name}] Phone Number is missing.')
+            return row
+        if not assigned_to_user_id:
+            row['Response'] = 'AssignedTo User ID is missing.'
+            print(f'[{farmer_name}] AssignedTo User ID is missing.')
+            return row
+        parts = []
+        if ' ' in phone_number_raw:
+            parts = phone_number_raw.split(' ')
+        elif '-' in phone_number_raw:
+            parts = phone_number_raw.split('-')
+        if len(parts) != 2 or not parts[0].isdigit() or (not parts[1].isdigit()):
             row['Response'] = 'Invalid phone number format. Required in 91 9876543210'
-            return row
-        if len(parts) != 2:
-            row['Status'] = 'Fail'
-            row['Response'] = 'Invalid phone number format. Required in 91 9876543210'
+            print(f'[{farmer_name}] Invalid phone number format: {phone_number_raw}')
             return row
         country_code = '+' + parts[0]
         mobile_number = parts[1]
-        address_payload_for_api = {'country': address_component.get('country'), 'formattedAddress': address_component.get('formattedAddress'), 'houseNo': address_component.get('houseNo', ''), 'buildingName': address_component.get('buildingName', ''), 'administrativeAreaLevel1': address_component.get('administrativeAreaLevel1'), 'locality': address_component.get('locality'), 'administrativeAreaLevel2': address_component.get('administrativeAreaLevel2'), 'sublocalityLevel1': address_component.get('sublocalityLevel1', ''), 'sublocalityLevel2': address_component.get('sublocalityLevel2', ''), 'landmark': address_component.get('landmark', ''), 'postalCode': address_component.get('postalCode'), 'placeId': address_component.get('placeId'), 'latitude': address_component.get('latitude'), 'longitude': address_component.get('longitude')}
-        for key in ['houseNo', 'buildingName', 'sublocalityLevel1', 'sublocalityLevel2', 'landmark']:
-            if address_payload_for_api.get(key) is None:
-                address_payload_for_api[key] = ''
-        payload = {'data': {'mobileNumber': mobile_number, 'countryCode': country_code}, 'firstName': farmer_first_name, 'farmerCode': farmer_code, 'assignedTo': [{'id': user_id, 'name': assigned_to_name}], 'address': address_payload_for_api}
-        api_url = f'{builtins.env_config.get('apiBaseUrl')}/services/farm/api/farmers'
+        address_component_payload = None
+        if address_str:
+            with _lock:
+                if address_str in _geocode_cache:
+                    address_component = _geocode_cache[address_str]
+                    print(f'[GEOFENCE] {address_str} → CACHE HIT')
+                else:
+                    try:
+                        geocode_result = geofence_utils.get_boundary(address_str, builtins.env_config.get('Geocoding_api_key'))
+                        address_component = geofence_utils.parse_address_component(geocode_result) if geocode_result else None
+                        _geocode_cache[address_str] = address_component
+                    except requests.exceptions.RequestException as e:
+                        row['Response'] = f'Geocoding API error: {e}'
+                        print(f'[GEOFENCE] {address_str} → API ERROR: {e}')
+                        return row
+                    except Exception as e:
+                        row['Response'] = f'Geocoding processing error: {e}'
+                        print(f'[GEOFENCE] {address_str} → PROCESSING ERROR: {e}')
+                        return row
+            if address_component:
+                address_component_payload = {'country': address_component.get('country'), 'formattedAddress': address_component.get('formattedAddress'), 'houseNo': address_component.get('houseNumber', ''), 'buildingName': address_component.get('buildingName', ''), 'administrativeAreaLevel1': address_component.get('administrativeAreaLevel1'), 'locality': address_component.get('locality'), 'administrativeAreaLevel2': address_component.get('administrativeAreaLevel2'), 'sublocalityLevel1': address_component.get('sublocalityLevel1', ''), 'sublocalityLevel2': address_component.get('sublocalityLevel2', ''), 'landmark': address_component.get('landmark', ''), 'postalCode': address_component.get('postalCode'), 'placeId': address_component.get('placeId'), 'latitude': address_component.get('latitude'), 'longitude': address_component.get('longitude')}
+                row['Address Component (non mandatory)'] = json.dumps(address_component_payload)
+                print(f'[GEOFENCE] {address_str} → lat={address_component.get('latitude', 'N/A'):.6f}, lng={address_component.get('longitude', 'N/A'):.6f}')
+            else:
+                row['Response'] = f'Failed to geocode address: {address_str}'
+                print(f'[GEOFENCE] {address_str} → Result: Not Found')
+                address_component_payload = None
+        else:
+            row['Address Component (non mandatory)'] = None
+            print(f'[GEOFENCE] No address provided for geocoding.')
+        farmer_payload = {'data': {'mobileNumber': mobile_number, 'countryCode': country_code}, 'firstName': farmer_name, 'farmerCode': farmer_code, 'assignedTo': [{'id': int(assigned_to_user_id), 'name': f'User_{assigned_to_user_id}'}], 'address': address_component_payload}
+        standard_input_output_columns = ['Farmer Name', 'Farmer Code', 'Phone Number', 'AssignedTo User ID', 'Address', 'Address Component (non mandatory)', 'Status', 'Response', 'Farmer ID']
+        for key, value in row.items():
+            if key not in standard_input_output_columns:
+                farmer_payload['data'][key] = str(value) if not isinstance(value, (int, float, bool)) else value
+        create_farmer_url = f'{builtins.env_config.get('apiBaseUrl')}/services/farm/api/farmers'
         headers = {'Authorization': f'Bearer {builtins.token}'}
-        files = {'dto': (None, json.dumps(payload), 'application/json')}
+        files = {'dto': (None, json.dumps(farmer_payload), 'application/json')}
         try:
-            response = _log_post(api_url, headers=headers, files=files)
-            response_json = response.json() if response.content else {}
+            response = _log_post(create_farmer_url, headers=headers, files=files)
+            response.raise_for_status()
+            response_json = response.json()
             if response.ok:
                 row['Status'] = 'Pass'
-                row['Farmer ID'] = response_json.get('id', 'NA')
                 row['Response'] = 'Farmer Created Successfully'
-            else:
-                row['Status'] = 'Fail'
-                row['Farmer ID'] = 'NA'
-                if response.status_code == 400:
-                    error_key = response_json.get('errorKey', f'Bad Request ({response.status_code})')
-                    row['Response'] = error_key
+                farmer_id = response_json.get('id')
+                if farmer_id:
+                    row['Farmer ID'] = str(farmer_id)
                 else:
-                    row['Response'] = f'API Error ({response.status_code}): {response_json.get('message', 'Unknown error')}'
+                    row['Farmer ID'] = 'NA (ID not found in response)'
+                    row['Response'] += ' (ID not found in response)'
+                print(f'[{farmer_name}] Farmer created successfully. ID: {row['Farmer ID']}')
+            else:
+                error_key = (response_json.get('error') or {}).get('errorKey') or response_json.get('message') or response.text
+                row['Response'] = f'Failed to create farmer: {error_key}'
+                row['Farmer ID'] = 'NA'
+                print(f'[{farmer_name}] Failed to create farmer. Status: {response.status_code}, Response: {error_key}')
+        except requests.exceptions.HTTPError as e:
+            status_code = e.response.status_code
+            error_detail = 'Unknown error'
+            try:
+                error_json = e.response.json()
+                if status_code == 400:
+                    error_key = (error_json.get('error') or {}).get('errorKey')
+                    error_detail = error_key if error_key else error_json.get('message', e.response.text)
+                else:
+                    error_detail = error_json.get('message', e.response.text)
+            except json.JSONDecodeError:
+                error_detail = e.response.text
+            row['Response'] = f'API Error {status_code}: {error_detail}'
+            row['Farmer ID'] = 'NA'
+            print(f'[{farmer_name}] API call failed. Status: {status_code}, Error: {error_detail}')
         except requests.exceptions.RequestException as e:
-            row['Status'] = 'Fail'
-            row['Response'] = f'Network or API request error: {str(e)}'
-        except json.JSONDecodeError:
-            row['Status'] = 'Fail'
-            row['Response'] = f'API did not return valid JSON. Status: {response.status_code}, Response: {response.text}'
+            row['Response'] = f'Request failed: {e}'
+            row['Farmer ID'] = 'NA'
+            print(f'[{farmer_name}] Request failed: {e}')
         except Exception as e:
-            row['Status'] = 'Fail'
-            row['Response'] = f'An unexpected error occurred: {str(e)}'
-        row['Farmer Name'] = farmer_name_ui
+            row['Response'] = f'An unexpected error occurred: {e}'
+            row['Farmer ID'] = 'NA'
+            print(f'[{farmer_name}] Unexpected error: {e}')
         return row
-    _geocode_lock = thread_utils.create_lock()
-    _user_lock = thread_utils.create_lock()
+    _lock = thread_utils.create_lock()
     res = _user_run(data, token, env_config)
     try:
         if res is None and hasattr(builtins, 'data_df'):
@@ -363,3 +402,5 @@ def run(data, token, env_config):
     except Exception as e:
         print(f'[Warn] Failed to sync data_df to result: {e}')
     return res
+_geocode_cache = None
+_use_provided_user_ids = None

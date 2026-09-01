@@ -254,7 +254,7 @@ def run(data, token, env_config):
         tag_lookup_result = master_search.lookup_from_cache(_assettag_list, 'name', tag_name, 'id')
         if not tag_lookup_result['found']:
             row['Response'] = tag_lookup_result['message']
-            print(f'[ASSETTAG_LOOKUP] {tag_name} → ID: Not Found. Message: {tag_lookup_result['message']}')
+            print(f"[ASSETTAG_LOOKUP] {tag_name} → ID: Not Found. Message: {tag_lookup_result['message']}")
             return row
         resolved_tag_id = tag_lookup_result['value']
         row['Tag ID'] = resolved_tag_id
