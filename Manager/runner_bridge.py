@@ -135,7 +135,8 @@ def run_script(target_script, data, token, env_config):
         results = module.run(data, token, env_config)
 
         # Merge input data with output results to preserve all input columns
-        if isinstance(results, list) and isinstance(data, list):
+        # (skipped for scripts whose output rows don't map 1:1 to input rows, e.g. master flows)
+        if isinstance(results, list) and isinstance(data, list) and not getattr(module, 'SKIP_INPUT_MERGE', False):
             merged_results = []
             for i, res_row in enumerate(results):
                 if i < len(data) and isinstance(data[i], dict) and isinstance(res_row, dict):

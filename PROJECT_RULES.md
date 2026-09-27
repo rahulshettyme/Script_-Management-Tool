@@ -7,6 +7,7 @@ For every change implemented in this codebase, the developer/agent MUST provide 
 3. **Why each file modification was needed** — A brief, technical rationale for each change.
 4. **Risk to be taken care of during testing** — Potential pitfalls, edge cases, or issues to monitor during QA/verification.
 5. **Probable impact areas** — Areas of the application that might be affected by the changes.
+6. **Commit message** — A ready-to-use git commit message for the change (subject line + short body). **STRICT:** provide the message only; do NOT run `git commit`, `git push` or any other git write/push activity unless the user explicitly asks.
 
 ## Testing Rules
 - **No Feature Automation Testing:** Do not perform browser-based or feature automation testing after code changes/fixes are made.
@@ -14,6 +15,7 @@ For every change implemented in this codebase, the developer/agent MUST provide 
 - **Manual User Testing:** Inform the user to perform manual testing for verification of feature changes.
 
 ## Script Failures and Modification Rules
+- **STRICT — No Manual Script Edits:** Never edit any script in `Draft Scripts/` or `Converted Scripts/` (including `TEST_*.py` copies and `.meta.json` files) by hand. Any script generation or conversion issue MUST be fixed in the tool (`Manager/script_generator.py`, `Manager/script_converter.py`, `Manager/runner_bridge.py`, `System/server.js`, etc.). The only exception is when the user manually and explicitly asks for a specific script to be edited.
 - **Tool Updates Over Direct Script Fixes:** Any script failures or bugs in generated/converted scripts must be treated as a tool failure (e.g., in `script_generator.py`). Scripts must not be modified directly unless the user explicitly and specifically requests it.
 - **Regeneration Workflow:** Always fix the underlying generator tool first, then let the user recreate/regenerate the failed script using the updated tool.
 

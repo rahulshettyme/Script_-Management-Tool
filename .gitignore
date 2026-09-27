@@ -54,6 +54,8 @@ Manager/*
 !Manager/runner_bridge.py
 Converted Scripts/*
 !Converted Scripts/*.py
+# Master flow step scripts (deployed; used by QA_Data_Setup_Master.py)
+!Converted Scripts/master_components/
 Draft Scripts/
 publish_release.py
 

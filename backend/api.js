@@ -1190,7 +1190,25 @@ module.exports = function (app) {
         });
 
         let stdoutData = '';
+        let stderrData = '';
+        let responded = false;
+        const sendOnce = (status, body) => {
+            if (responded) return;
+            responded = true;
+            clearTimeout(killTimer);
+            res.status(status).json(body);
+        };
+        // Hard cap so the UI never waits forever on a hung generator
+        const GENERATE_TIMEOUT_MS = 5 * 60 * 1000;
+        const killTimer = setTimeout(() => {
+            console.error('[GENERATE] Generator timed out, killing process. stderr:', stderrData.slice(-2000));
+            pythonProcess.kill();
+            sendOnce(504, { status: 'error', message: 'Script generation timed out after 5 minutes (AI service unreachable or slow). Please retry.' });
+        }, GENERATE_TIMEOUT_MS);
+
         pythonProcess.stdout.on('data', d => stdoutData += d.toString());
+        pythonProcess.stderr.on('data', d => stderrData += d.toString());
+        pythonProcess.on('error', err => sendOnce(500, { status: 'error', message: `Failed to start generator: ${err.message}` }));
         // Pass everything needed for update logic
         pythonProcess.stdin.write(JSON.stringify({
             description,
@@ -1206,13 +1224,17 @@ module.exports = function (app) {
         pythonProcess.stdin.end();
 
         pythonProcess.on('close', code => {
-            if (code !== 0) return res.status(500).json({ error: 'Generator failed' });
+            if (responded) return;
+            if (code !== 0) {
+                console.error('[GENERATE] Generator exited with code', code, 'stderr:', stderrData.slice(-2000));
+                return sendOnce(500, { status: 'error', error: 'Generator failed', message: `Generator failed (exit ${code}). ${stderrData.slice(-300)}` });
+            }
             try {
                 const parts = stdoutData.split('---JSON_START---');
                 const result = JSON.parse(parts[parts.length - 1].trim());
-                res.json(result);
+                sendOnce(200, result);
             } catch (e) {
-                res.status(500).json({ error: 'Parse error', details: stdoutData });
+                sendOnce(500, { status: 'error', error: 'Parse error', message: 'Could not parse generator output', details: stdoutData });
             }
         });
     });

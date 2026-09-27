@@ -771,6 +771,131 @@
                     </p>
                 </div>
 
+                <!-- QA Data Setup (Master) Configuration (shown only for the master script) -->
+                <div id="master-flow-config" class="hidden"
+                    style="margin-bottom: 1rem; padding: 0.75rem; background: #f3f6fb; border: 1px solid #d6e0f0; border-radius: 4px;">
+                    <h4 style="color: #264554; margin: 0 0 0.35rem 0; font-size: 0.9rem;">🧩 QA Data Setup Steps</h4>
+                    <p style="margin: 0 0 0.75rem 0; color: #666; font-size: 0.75rem;">Runs the selected steps in order and
+                        stops after the last selected step. Area Audit and Crop/DOS run on the CAs created here.</p>
+
+                    <!-- Step 1: Farmer -->
+                    <div class="master-step" style="padding: 0.6rem; background: #fff; border: 1px solid #e0e6ef; border-radius: 4px; margin-bottom: 0.6rem;">
+                        <label style="font-weight: 600; font-size: 0.85rem; display: flex; gap: 8px; align-items: center;">
+                            <input type="checkbox" id="mf-step-farmer" checked disabled> 1. Farmer
+                        </label>
+                        <label style="font-size: 0.8rem; display: flex; gap: 8px; align-items: center; margin: 0.4rem 0;">
+                            <input type="checkbox" id="mf-existing-farmer"> Add for existing farmer (skip Add Farmer)
+                        </label>
+                        <div id="mf-existing-farmer-fields" class="hidden">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="mf-existing-farmer-ids">Existing Farmer ID(s) * <small>(comma separated)</small></label>
+                                <input type="text" id="mf-existing-farmer-ids" class="boundary-input" placeholder="e.g. 5770850, 5770851">
+                            </div>
+                        </div>
+                        <div id="mf-new-farmer-fields">
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="mf-user-ids">AssignedTo User ID(s) * <small>(comma separated)</small></label>
+                                    <input type="text" id="mf-user-ids" class="boundary-input" placeholder="e.g. 1234, 5678">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="mf-farmers-per-user">Farmers per User *</label>
+                                    <input type="number" id="mf-farmers-per-user" class="boundary-input" value="1" min="1" step="1">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="mf-farmer-name">First Farmer Name *</label>
+                                    <input type="text" id="mf-farmer-name" class="boundary-input" placeholder="e.g. RS F 26171001">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="mf-farmer-code">First Farmer Code *</label>
+                                    <input type="text" id="mf-farmer-code" class="boundary-input" placeholder="e.g. RSF26171001">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="mf-farmer-phone">First Phone Number *</label>
+                                    <input type="text" id="mf-farmer-phone" class="boundary-input" placeholder="e.g. +91 9126271001">
+                                </div>
+                                <div class="form-group" style="margin-bottom: 0;">
+                                    <label for="mf-farmer-address">Farmer Address <small>(same for all)</small></label>
+                                    <input type="text" id="mf-farmer-address" class="boundary-input" placeholder="e.g. Bangalore">
+                                </div>
+                            </div>
+                            <small style="color: #666; font-size: 0.75rem;">Name, Code and Phone increase by 1 at the end
+                                for each next farmer (RS F 26171001 → RS F 26171002 …).</small>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Asset -->
+                    <div class="master-step" style="padding: 0.6rem; background: #fff; border: 1px solid #e0e6ef; border-radius: 4px; margin-bottom: 0.6rem;">
+                        <label style="font-weight: 600; font-size: 0.85rem; display: flex; gap: 8px; align-items: center;">
+                            <input type="checkbox" id="mf-step-asset" checked> 2. Add Asset
+                        </label>
+                        <div id="mf-asset-fields" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.4rem;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="mf-asset-prefix">Asset Name Prefix *</label>
+                                <input type="text" id="mf-asset-prefix" class="boundary-input" placeholder="e.g. RS A 2617">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="mf-assets-per-farmer">Assets per Farmer *</label>
+                                <input type="number" id="mf-assets-per-farmer" class="boundary-input" value="1" min="1" step="1">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="mf-soil-type">Soil Type *</label>
+                                <input type="text" id="mf-soil-type" class="boundary-input" placeholder="e.g. Black Soil">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="mf-irrigation-type">Irrigation Type *</label>
+                                <input type="text" id="mf-irrigation-type" class="boundary-input" placeholder="e.g. Drip">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="mf-asset-address">Asset Address *</label>
+                                <input type="text" id="mf-asset-address" class="boundary-input" placeholder="e.g. Bangalore">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="mf-declared-area">Declared Area *</label>
+                                <input type="number" id="mf-declared-area" class="boundary-input" value="1" min="0" step="any">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Assign & Validate -->
+                    <div class="master-step" style="padding: 0.6rem; background: #fff; border: 1px solid #e0e6ef; border-radius: 4px; margin-bottom: 0.6rem;">
+                        <label style="font-weight: 600; font-size: 0.85rem; display: flex; gap: 8px; align-items: center;">
+                            <input type="checkbox" id="mf-step-validate" checked> 3. Assign &amp; Validate Asset to Project
+                        </label>
+                        <div id="mf-validate-fields" class="form-group" style="margin: 0.4rem 0 0 0;">
+                            <label for="mf-project-id">Project ID *</label>
+                            <input type="number" id="mf-project-id" class="boundary-input" placeholder="e.g. 5827901">
+                        </div>
+                    </div>
+
+                    <!-- Step 4: Area Audit (optional, uses the Boundary / Area Audit inputs below) -->
+                    <div class="master-step" style="padding: 0.6rem; background: #fff; border: 1px solid #e0e6ef; border-radius: 4px; margin-bottom: 0.6rem;">
+                        <label style="font-weight: 600; font-size: 0.85rem; display: flex; gap: 8px; align-items: center;">
+                            <input type="checkbox" id="mf-step-area-audit"> 4. Area Audit V2 <small style="font-weight: 400;">(optional)</small>
+                        </label>
+                        <small style="color: #666; font-size: 0.75rem;">Uses the Area Audit / Boundary configuration shown below.</small>
+                    </div>
+
+                    <!-- Step 5: Crop & DOS (optional) -->
+                    <div class="master-step" style="padding: 0.6rem; background: #fff; border: 1px solid #e0e6ef; border-radius: 4px;">
+                        <label style="font-weight: 600; font-size: 0.85rem; display: flex; gap: 8px; align-items: center;">
+                            <input type="checkbox" id="mf-step-edit-ca"> 5. Add Variety and/or DOS to CA <small style="font-weight: 400;">(optional)</small>
+                        </label>
+                        <div id="mf-edit-ca-fields" class="hidden" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.4rem;">
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="mf-variety-name">Variety Name</label>
+                                <input type="text" id="mf-variety-name" class="boundary-input" placeholder="e.g. Tomato Hybrid">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 0;">
+                                <label for="mf-dos">Date of Sowing</label>
+                                <input type="date" id="mf-dos" class="boundary-input">
+                            </div>
+                        </div>
+                    </div>
+
+                    <p id="mf-summary" style="margin: 0.75rem 0 0 0; font-size: 0.8rem; color: #1565c0;"></p>
+                </div>
+
                 <!-- Boundary Configuration (shown for coordinates type) -->
                 <div id="boundary-config" class="boundary-config hidden">
                     <h4 style="color: #264554; margin-bottom: 0.35rem; font-size: 0.9rem;">📍 Boundary Configuration
@@ -1095,6 +1220,7 @@
     <script src="components/execution_history.js"></script>
     <script src="components/results_filter.js"></script>
     <script src="script.js"></script>
+    <script src="components/master_flow.js"></script>
 </body>
 
 </html>

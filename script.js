@@ -578,6 +578,7 @@ function handleTeamSelection(team) {
         elements.exportBtn.disabled = true;
         elements.importBtn.disabled = true;
         selectedDataType = null;
+        if (window.MasterFlow) window.MasterFlow.refresh();
     } catch (err) {
         console.error('[handleTeamSelection] Error:', err);
         alert('Error selecting team: ' + err.message);
@@ -860,6 +861,9 @@ async function handleScriptSelection(value) {
         elements.importBtn.disabled = true;
         if (elements.advancedSettingsSection) elements.advancedSettingsSection.classList.add('hidden');
     }
+
+    // QA Data Setup (Master): show its custom form instead of the Excel flow
+    if (window.MasterFlow) window.MasterFlow.refresh();
 }
 
 // =============================================
@@ -1940,6 +1944,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     elements.sessionInfo.textContent = `${userDetails.username} (${userDetails.tenant}) [${userDetails.environment}]`;
                 }
 
+                // QA Data Setup (Master) needs no upload: enable Run right after login
+                if (window.MasterFlow) window.MasterFlow.refresh();
+
                 // If Environment selected, load refs
                 // loadAssetReferenceData(); 
             },
@@ -1979,6 +1986,9 @@ if (elements.executeBtn) {
         const template = TEMPLATES[selectedDataType] || {};
         const noLoginRequired = template.requiresLogin === false;
         if (!authToken && !noLoginRequired) return alert('Please login first.');
+
+        // QA Data Setup (Master): rows come from its form, not an uploaded file
+        if (window.MasterFlow && window.MasterFlow.isMasterSelected()) return window.MasterFlow.execute();
 
         // 1. Get Rows from Data
         const fileInput = elements.fileUpload;

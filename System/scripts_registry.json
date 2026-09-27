@@ -2328,5 +2328,245 @@
       }
     },
     "generation_prompt": "Script Name: Delete CA\nExcel Columns: CA Name, CA ID\n\nOUTPUT MAPPING CONFIGURATION:\n- UI Output Definition:\n- UI Column 'CA Name': Set to 'Excel - 'CA Name' column' (Logic: )\n- UI Column 'CA ID': Set to 'excel - 'CA ID' column' (Logic: )\n- UI Column 'Status': Set to 'Success or Failed' (Logic: If the 'Delete_CA' response.deletable value is 1, update excel column 'Delete Status' as 'Success')\nIMPORTANT: Include this configuration as a comment block at the top of the generated Python script for reference.\n\nStep 1 [API]:\n  - Step/Variable Name: Get_CA\n  - Call GET /services/farm/api/croppable-areas/<CA ID>\n  - Payload Type: QUERY\n  - Expected Response: {  \"id\" : 5946907,  \"cropUnits\" : 0,  \"name\" : \"RS Filter Async Bulk 3 A 7\",  \"expectedQuantity\" : 1010.0,  \"organic\" : null,  \"status\" : \"ACCEPTED\",  \"cropexCropCode\" : null,  \"cropAudited\" : true,  \"sowingDate\" : \"2025-12-01T00:00:00.000+0000\",  \"pruningDate\" : null,  \"expectedHarvestDate\" : \"2026-04-10T00:00:00.000+0000\",  \"data\" : {    \"bulkProcessId\" : 5946503,    \"location\" : \"///\",    \"expectedYield\" : 1000.0,    \"srPlotId\" : \"17126151455946907\"  },  \"projectId\" : 5946651,  \"projectName\" : \"RS Filter Async Bulk 3\",  \"landId\" : 5946757,  \"landName\" : \"RS Filter Async Bulk 3 A 7\",  \"varietyId\" : 5914301,  \"varietyName\" : \"RS PR Sentinel Paddy\",  \"actualCropStageId\" : null,  \"actualCropStageName\" : null,  \"expectedCropStageId\" : null,  \"expectedCropStageName\" : null,  \"cropId\" : 1012,  \"cropName\" : \"Paddy\",  \"srCropId\" : 19,  \"varietySrCropId\" : 19,  \"varietySrCropCode\" : \"Paddy\",  \"ownerId\" : 5917951,  \"ownerFirstName\" : \"RS F 25311001\",  \"landSoilTypeName\" : \"Black\",  \"landIrrigationTypeName\" : \"Basin Irrigation\",  \"auditedArea\" : {    \"count\" : 1.01  },  \"usableArea\" : {    \"count\" : 1.01  },  \"declaredArea\" : {    \"count\" : 1.0  },  \"orderNumber\" : \"\",  \"tasks\" : [ ],  \"cropUnitList\" : [ ],  \"massUploadUserId\" : null,  \"images\" : null,  \"splitBy\" : null,  \"splitDate\" : null,  \"lastModifiedDate\" : \"2026-05-19T11:10:53.537Z\",  \"externalId\" : null,  \"assignedToFarmerIds\" : [ 3388201 ],  \"assignedToFarmerNames\" : [ \"RS qa2 user 1\" ],  \"userNames\" : [ ],  \"planTypeId\" : null,  \"planTypeName\" : null,  \"detailingStatus\" : \"ONGOING\",  \"clientId\" : \"2d4eb5b3-101e-4417-8014-0046dffcd83d\",  \"reestimatedDate\" : null,  \"reestimatedValue\" : 1010.0,  \"receivedHarvest\" : 0.0,  \"hasTaskStarted\" : false,  \"latitude\" : 13.092920700894469,  \"longitude\" : 74.79160670600281,  \"altitude\" : 23.0,  \"areaAudit\" : {    \"id\" : 5946459,    \"name\" : null,    \"administrativeAreaLevel5\" : null,    \"administrativeAreaLevel4\" : null,    \"administrativeAreaLevel3\" : null,    \"administrativeAreaLevel2\" : null,    \"administrativeAreaLevel1\" : null,    \"country\" : null,    \"latitude\" : 13.092920700894469,    \"longitude\" : 74.79160670600281,    \"sublocalityLevel1\" : null,    \"sublocalityLevel2\" : null,    \"sublocalityLevel3\" : null,    \"sublocalityLevel4\" : null,    \"sublocalityLevel5\" : null,    \"geoInfo\" : {      \"type\" : \"FeatureCollection\",      \"features\" : [ {        \"type\" : \"Feature\",        \"geometry\" : {          \"type\" : \"MultiPolygon\",          \"coordinates\" : [ [ [ [ 74.79131339896094, 13.092633192192396 ], [ 74.79190001304468, 13.092633192192396 ], [ 74.79190001304468, 13.093208209596538 ], [ 74.79131339896094, 13.093208209596538 ], [ 74.79131339896094, 13.092633192192396 ] ] ] ]        },        \"properties\" : { }      } ]    },    \"placeId\" : null,    \"channel\" : \"mobile\",    \"croppableAreaId\" : 5946907,    \"auditedArea\" : 1.006046732938171,    \"current\" : true,    \"createdBy\" : \"3388201\",    \"createdDate\" : \"2026-03-04T06:29:06.167Z\",    \"lastModifiedBy\" : \"SYSTEM\",    \"lastModifiedDate\" : \"2026-03-04T06:54:37.304Z\",    \"data\" : {      \"apiAltitudeValue\" : true,      \"areaAuditMode\" : \"MAP\",      \"areaAuditType\" : \"WEB\"    },    \"altitude\" : 23.0,    \"companyId\" : null,    \"gridId\" : \"3bbcad4\",    \"level\" : 11,    \"deleted\" : false  },  \"plotScore\" : 0,  \"farmerCode\" : \"RSF25311001\",  \"topFieldAlertName\" : null,  \"topReportedLoss\" : null,  \"lossReported\" : null,  \"nameCounter\" : null,  \"reasonId\" : null,  \"reasonName\" : null,  \"projectAssetId\" : 5946857,  \"srPlotId\" : \"17126151455946907\",  \"farmerCropId\" : \"17126151455946907\",  \"userIds\" : [ ],  \"acreSquareCaId\" : null,  \"split\" : false,  \"landClientId\" : \"f6fadc7a-a7bb-4da7-9726-32c00261807d\",  \"ownerClientId\" : \"ea8e94f6-8771-4b72-9ba7-875f86279d79\",  \"projectClientId\" : \"07ae0e75-6462-44f5-924c-5e993d4a387a\",  \"deleted\" : false,  \"plotClosure\" : false,  \"massUpload\" : false,  \"isIgnoreTaskStarted\" : false}\n  - Instructions: 1. Hit the API using the 'CA ID'  2. Get 'projectId' from response attributes and write in excel columns 'projectId'  3. Get 'projectAssetId' from response attributes and write in excel columns 'projectAssetId'\n\nStep 2 [API]:\n  - Step/Variable Name: Delete_CA\n  - Call DELETE /services/farm/api/projects/<projectId>/project-assets/selected-ids?ids=<projectAssetId>&croppableAreaIds=<CA ID>\n  - Payload Type: QUERY\n  - Payload Example: {\"ids\":\"<projectAssetId>\",\"croppableAreaIds\":\"<CA ID>\"}\n  - Expected Response: {  \"deletable\" : 1,  \"nonDeletable\" : 0}\n  - Instructions: 1. Create API using the 'Project Id' and 'CA ID'   2. If the response.deletable value is 1, update excel column 'Delete Status' as 'Success'\n\n"
+  },
+  {
+    "name": "Delete Asset",
+    "filename": "Delete_Asset.py",
+    "team": "Both",
+    "description": "This script can be used to Delete Assets.",
+    "expected_columns": [
+      "Asset Name",
+      "Asset ID"
+    ],
+    "columns": [
+      {
+        "name": "Asset Name",
+        "type": "Mandatory",
+        "description": "Auto-detected"
+      },
+      {
+        "name": "Asset ID",
+        "type": "Mandatory",
+        "description": "Auto-detected"
+      }
+    ],
+    "outputColumns": [
+      "Delete Status"
+    ],
+    "requiresLogin": true,
+    "isMultithreaded": true,
+    "batchSize": 10,
+    "allowLargeBatch": false,
+    "groupByColumn": "",
+    "enableGeofencing": false,
+    "allowAdditionalAttributes": false,
+    "additionalAttributes": [],
+    "outputConfig": {
+      "uiMapping": [
+        {
+          "colName": "Asset Name",
+          "value": "Excel - 'Asset Name' column",
+          "logic": ""
+        },
+        {
+          "colName": "Asset ID",
+          "value": "excel - 'Asset ID' column",
+          "logic": ""
+        },
+        {
+          "colName": "Status",
+          "value": "Success or Failed",
+          "logic": "If the 'Delete_Asset' response.deletable value is 1, update excel column 'Delete Status' as 'Success'"
+        }
+      ],
+      "aiInstructions": "",
+      "excelMapping": [],
+      "isDynamicUI": true,
+      "passCriteria": {
+        "column": "Delete Status",
+        "values": [
+          "Success"
+        ]
+      }
+    },
+    "generation_prompt": "Script Name: Delete Asset\nExcel Columns: Asset Name, Asset ID\n\nOUTPUT MAPPING CONFIGURATION:\n- UI Output Definition:\n- UI Column 'Asset Name': Set to 'Excel - 'Asset Name' column' (Logic: )\n- UI Column 'Asset ID': Set to 'excel - 'Asset ID' column' (Logic: )\n- UI Column 'Status': Set to 'Success or Failed' (Logic: If the 'Delete_Asset' response.deletable value is 1, update excel column 'Delete Status' as 'Success')\nIMPORTANT: Include this configuration as a comment block at the top of the generated Python script for reference.\n\nStep 1 [API]:\n  - Step/Variable Name: Delete_Asset\n  - Call DELETE services/farm/api/assets/bulk?ids=<Asset ID>\n  - Payload Type: QUERY\n  - Payload Example: {\"ids\":\"<Asset ID>\"}\n  - Expected Response: {  \"deletable\" : 1,  \"nonDeletable\" : 0}\n  - Instructions: 1. Create API using the 'Asset ID' 2. If the response.deletable value is 1, update excel column 'Delete Status' as 'Success'\n\n"
+  },
+  {
+    "name": "Assign and Validate asset to Project",
+    "filename": "Assign_and_Validate_asset_to_Project.py",
+    "team": "QA",
+    "description": "This script can be used to assign and validate asset to project",
+    "expected_columns": [
+      "Asset Name",
+      "Asset ID",
+      "Project ID"
+    ],
+    "columns": [
+      {
+        "name": "Asset Name",
+        "type": "Mandatory",
+        "description": "Auto-detected"
+      },
+      {
+        "name": "Asset ID",
+        "type": "Mandatory",
+        "description": "Auto-detected"
+      },
+      {
+        "name": "Project ID",
+        "type": "Mandatory",
+        "description": "Auto-detected"
+      }
+    ],
+    "outputColumns": [
+      "projectAssetIds",
+      "Assigned status",
+      "Validated status",
+      "CA ID"
+    ],
+    "requiresLogin": true,
+    "isMultithreaded": true,
+    "batchSize": 5,
+    "allowLargeBatch": false,
+    "groupByColumn": "",
+    "enableGeofencing": false,
+    "allowAdditionalAttributes": false,
+    "additionalAttributes": [],
+    "outputConfig": {
+      "uiMapping": [
+        {
+          "colName": "Asset Name",
+          "value": "",
+          "logic": "from excel"
+        },
+        {
+          "colName": "Asset ID",
+          "value": "",
+          "logic": "from excel"
+        },
+        {
+          "colName": "Status",
+          "value": "Pass or Fail",
+          "logic": "From Validate_asset response, if 'recordsCompleted' is 1, show as Pass, else mark as Fail"
+        },
+        {
+          "colName": "CA ID",
+          "value": "",
+          "logic": "From Validate_asset response, if 'recordsCompleted' is 1, show the value of 'croppableAreaIds'"
+        }
+      ],
+      "aiInstructions": "",
+      "excelMapping": [],
+      "isDynamicUI": true,
+      "passCriteria": null
+    },
+    "generation_prompt": "Script Name: Assign and Validate asset to Project\nExcel Columns: Asset Name, Asset ID, Project ID\n\nOUTPUT MAPPING CONFIGURATION:\n- UI Output Definition:\n- UI Column 'Asset Name': Set to '' (Logic: from excel)\n- UI Column 'Asset ID': Set to '' (Logic: from excel)\n- UI Column 'Status': Set to 'Pass or Fail' (Logic: From Validate_asset response, if 'recordsCompleted' is 1, show as Pass, else mark as Fail)\n- UI Column 'CA ID': Set to '' (Logic: From Validate_asset response, if 'recordsCompleted' is 1, show the value of 'croppableAreaIds')\nIMPORTANT: Include this configuration as a comment block at the top of the generated Python script for reference.\n\nStep 1 [API]:\n  - Step/Variable Name: Assign_asset\n  - Call POST /services/farm/api/projects/<Project ID>/probable-assets\n  - Payload Type: JSON\n  - Payload Example: [<Asset ID>]\n  - Expected Response: {  \"recordsFailed\" : 0,  \"recordsCompleted\" : 1,  \"error\" : \"\",  \"projectAssetIds\" : [ 5981301 ]}\n  - Instructions: 1. Hit the API using the 'Project ID' column and 'Asset ID' from excel 2. From response, if 'recordsCompleted' is 1, update excel 'Assigned status' as Success, else mark as fail 3. for 'recordsCompleted' value 1 assets, get 'projectAssetIds' and add 'projectAssetIds' in excel column 'projectAssetIds'\n\nStep 2 [API]:\n  - Step/Variable Name: Validate_asset\n  - Call POST /services/farm/api/projects/<Project ID>/self-validate-project-assets?cloneFlag=false\n  - Payload Type: JSON\n  - Payload Example: [>projectAssetIds>]\n  - Expected Response: {  \"recordsFailed\" : 0,  \"recordsCompleted\" : 1,  \"croppableAreaIds\" : [ 5981352 ],  \"error\" : \"\"}\n  - Instructions: 1. Hit the API using the 'Project ID' column and 'projectAssetIds' from excel 2. Do not process for 'projectAssetIds' not present rows 3. From response, if 'recordsCompleted' is 1, update excel 'Validated status' as Success, else mark as fail 4. for 'recordsCompleted' value 1 assets, get 'croppableAreaIds' and add in excel column 'CA ID'\n\n"
+  },
+  {
+    "name": "QA Data Setup (Master)",
+    "filename": "QA_Data_Setup_Master.py",
+    "team": "QA",
+    "description": "Creates fresh QA data in one run: Add Farmer (or use existing farmers) -> Add Asset -> Assign & Validate to Project -> optional Area Audit V2 and/or Crop & DOS update. Inputs are entered in the form; no Excel upload needed.",
+    "isMasterFlow": true,
+    "expected_columns": [],
+    "columns": [],
+    "requiresLogin": true,
+    "isMultithreaded": false,
+    "batchSize": 5,
+    "outputConfig": {
+      "isDynamicUI": true,
+      "uiMapping": [
+        {
+          "colName": "User ID",
+          "value": "User ID",
+          "logic": "Mapped from master script output"
+        },
+        {
+          "colName": "Farmer ID",
+          "value": "Farmer ID",
+          "logic": "Mapped from master script output"
+        },
+        {
+          "colName": "Farmer Name",
+          "value": "Farmer Name",
+          "logic": "Mapped from master script output"
+        },
+        {
+          "colName": "Farmer Code",
+          "value": "Farmer Code",
+          "logic": "Mapped from master script output"
+        },
+        {
+          "colName": "Phone Number",
+          "value": "Phone Number",
+          "logic": "Mapped from master script output"
+        },
+        {
+          "colName": "Asset ID",
+          "value": "Asset ID",
+          "logic": "Mapped from master script output"
+        },
+        {
+          "colName": "Asset Name",
+          "value": "Asset Name",
+          "logic": "Mapped from master script output"
+        },
+        {
+          "colName": "CA ID",
+          "value": "CA ID",
+          "logic": "Mapped from master script output"
+        },
+        {
+          "colName": "Audited Area",
+          "value": "Audited Area",
+          "logic": "Mapped from master script output"
+        },
+        {
+          "colName": "Variety",
+          "value": "Variety",
+          "logic": "Mapped from master script output"
+        },
+        {
+          "colName": "DOS",
+          "value": "DOS",
+          "logic": "Mapped from master script output"
+        },
+        {
+          "colName": "Farmer Status",
+          "value": "Farmer Status",
+          "logic": "Mapped from master script output"
+        },
+        {
+          "colName": "Asset Status",
+          "value": "Asset Status",
+          "logic": "Mapped from master script output"
+        },
+        {
+          "colName": "Validate Status",
+          "value": "Validate Status",
+          "logic": "Mapped from master script output"
+        },
+        {
+          "colName": "Area Audit Status",
+          "value": "Area Audit Status",
+          "logic": "Mapped from master script output"
+        },
+        {
+          "colName": "Crop/DOS Status",
+          "value": "Crop/DOS Status",
+          "logic": "Mapped from master script output"
+        },
+        {
+          "colName": "Status",
+          "value": "Status",
+          "logic": "Mapped from master script output"
+        },
+        {
+          "colName": "Response",
+          "value": "Response",
+          "logic": "Mapped from master script output"
+        }
+      ]
+    }
   }
 ]

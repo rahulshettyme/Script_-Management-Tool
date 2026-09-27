@@ -3,6 +3,7 @@ echo Starting Script Management Tool and Sharing via ngrok...
 
 :: Start the server in a new window
 echo Starting local server on port 3001...
+set "PATH=%LOCALAPPDATA%\Programs\Python\Python313;%LOCALAPPDATA%\Programs\Python\Python313\Scripts;%PATH%"
 start "Script Management Tool Server" cmd /k "npm start"
 
 :: Wait a few seconds for the server to start

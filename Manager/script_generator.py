@@ -5,6 +5,15 @@ import os
 import requests
 import re
 
+# Force IPv4 for outbound calls: on networks where IPv6 is unreachable, urllib3 tries every
+# AAAA record (8 for Gemini) with the full timeout before IPv4, stalling each call for minutes.
+try:
+    import socket
+    import urllib3.util.connection as _urllib3_connection
+    _urllib3_connection.allowed_gai_family = lambda: socket.AF_INET
+except Exception:
+    pass
+
 def sanitize_code(code: str) -> str:
     """Sanitizes sensitive information like JWT tokens from the code."""
     jwt_pattern = r'eyJ[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+\.[a-zA-Z0-9\-_]+'

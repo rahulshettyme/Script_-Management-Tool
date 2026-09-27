@@ -12,7 +12,8 @@ import io
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 
 # 1. Setup Environment
-sys.path.append(r"c:\Users\cropin\Documents\Important\AntiGravity\Data Generate\Manager")
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'Manager')))
 import script_converter
 
 # 2. Mock Logic WITH Run Function
