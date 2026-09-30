@@ -58,16 +58,30 @@
         return m[1] + next.padStart(m[2].length, '0');
     }
 
+    /**
+     * Counter rule for Farmer Name / Code / Phone and Asset Name (index is 0-based):
+     *  - total 1                 -> value exactly as entered
+     *  - value ends with number  -> first = as entered, then +1 ('RS F 26171001' -> '...002')
+     *  - otherwise               -> value + ' ' + counter from 1, padded to digits of total
+     *                               (5 -> 1..5, 10 -> 01..10, 100 -> 001..100)
+     */
+    function seriesValue(value, index, total) {
+        const base = String(value || '').trim();
+        if (total <= 1) return base;
+        const incremented = incrementTrailingNumber(base, index);
+        if (incremented !== null) return incremented;
+        return `${base} ${String(index + 1).padStart(String(total).length, '0')}`;
+    }
+
     /** Add_Farmer expects '91 9876543210' (no '+'). */
     function toScriptPhone(phone) {
         return String(phone || '').trim().replace(/^\+/, '');
     }
 
-    /** Continuous asset names; counter width = digits of total (10 -> 01..10, 100 -> 001..100). */
+    /** Continuous asset names across all farmers. */
     function buildAssetNames(prefix, total) {
-        const width = String(total).length;
         const names = [];
-        for (let i = 1; i <= total; i++) names.push(`${prefix}${String(i).padStart(width, '0')}`);
+        for (let i = 0; i < total; i++) names.push(seriesValue(prefix, i, total));
         return names;
     }
 
@@ -87,14 +101,15 @@
                 'AssignedTo User ID': '', 'Existing Farmer ID': id
             }));
         } else {
+            const total = opts.userIds.length * opts.farmersPerUser;
             let k = 0;
             opts.userIds.forEach(userId => {
                 for (let j = 0; j < opts.farmersPerUser; j++, k++) {
                     plans.push({
                         'Farmer #': k + 1,
-                        'Farmer Name': incrementTrailingNumber(opts.name, k),
-                        'Farmer Code': incrementTrailingNumber(opts.code, k),
-                        'Phone Number': toScriptPhone(incrementTrailingNumber(opts.phone, k)),
+                        'Farmer Name': seriesValue(opts.name, k, total),
+                        'Farmer Code': seriesValue(opts.code, k, total),
+                        'Phone Number': toScriptPhone(seriesValue(opts.phone, k, total)),
                         'AssignedTo User ID': userId,
                         'Existing Farmer ID': ''
                     });
@@ -105,6 +120,37 @@
         const names = perFarmer ? buildAssetNames(opts.assetPrefix, plans.length * perFarmer) : [];
         plans.forEach((p, i) => { p['Asset Names'] = names.slice(i * perFarmer, (i + 1) * perFarmer); });
         return plans;
+    }
+
+    /**
+     * Splits farmer plans into asset groups of up to groupSize assets (in order).
+     * Each group is a list of plan rows carrying only that group's 'Asset Names'.
+     * farmerResults[i] (optional) = { id, status, response } from the farmer phase.
+     */
+    function buildAssetGroups(plans, groupSize, farmerResults) {
+        const groups = [];
+        let current = [];
+        let count = 0;
+        const flush = () => { if (current.length) groups.push(current); current = []; count = 0; };
+        plans.forEach((plan, i) => {
+            const fr = farmerResults ? farmerResults[i] : null;
+            const base = { ...plan };
+            if (fr) {
+                base['Existing Farmer ID'] = fr.id || '';
+                base['Farmer Status'] = fr.status;
+                base['Farmer Response'] = fr.response || '';
+            }
+            let names = plan['Asset Names'] || [];
+            while (names.length) {
+                const take = names.slice(0, groupSize - count);
+                current.push({ ...base, 'Asset Names': take });
+                count += take.length;
+                names = names.slice(take.length);
+                if (count >= groupSize) flush();
+            }
+        });
+        flush();
+        return groups;
     }
 
     // ---------------- Form state ----------------
@@ -157,8 +203,8 @@
             if (!f.userIds.length) errors.push('Enter at least one AssignedTo User ID.');
             if (f.userIds.some(id => !/^\d+$/.test(id))) errors.push('AssignedTo User IDs must be numbers.');
             if (f.farmersPerUser < 1) errors.push('Farmers per User must be at least 1.');
-            if (!/\d$/.test(f.name)) errors.push("First Farmer Name must end with a number (e.g. 'RS F 26171001').");
-            if (!/\d$/.test(f.code)) errors.push('First Farmer Code must end with a number.');
+            if (!f.name) errors.push('Enter First Farmer Name.');
+            if (!f.code) errors.push('Enter First Farmer Code.');
             if (!/^\+?\d{1,4}[ -]\d+$/.test(f.phone)) errors.push("Phone Number must be like '+91 9126271001'.");
         }
         if (f.withAssets) {
@@ -186,9 +232,10 @@
         const parts = [];
         if (f.existing) {
             parts.push(`${farmerCount} existing farmer(s)`);
-        } else if (farmerCount > 0 && /\d$/.test(f.name)) {
-            const last = incrementTrailingNumber(f.name, farmerCount - 1);
-            parts.push(`${farmerCount} farmer(s): ${f.name}${farmerCount > 1 ? ' → ' + last : ''}`);
+        } else if (farmerCount > 0 && f.name) {
+            const first = seriesValue(f.name, 0, farmerCount);
+            const last = seriesValue(f.name, farmerCount - 1, farmerCount);
+            parts.push(`${farmerCount} farmer(s): ${first}${farmerCount > 1 ? ' → ' + last : ''}`);
         } else {
             parts.push(`${farmerCount} farmer(s)`);
         }
@@ -325,36 +372,96 @@
         };
 
         startExecution('⏳ Running QA Data Setup...');
-        const total = plans.length;
+        const groupSize = farmersPerCall;
+        const totalRows = f.withAssets ? plans.reduce((n, p) => n + p['Asset Names'].length, 0) : plans.length;
         let processed = 0, pass = 0, fail = 0;
-        updateProgress(0, total, 0, 0);
+        let farmersDone = 0;
+        updateProgress(0, totalRows, 0, 0);
+
+        const stepsFarmerOnly = { farmer: true, asset: false, validate: false, areaAudit: false, editCa: false };
+        const stepsAssetChain = { farmer: false, asset: true, validate: f.validate, areaAudit: f.areaAudit, editCa: f.editCa };
+
+        /** One master call. Returns result rows, or throws on session expiry. */
+        async function callMaster(rows, steps, fallbackRows) {
+            const executor = new ScriptExecutorV2({ apiBaseUrl: envData.apiBaseUrl, debug: true });
+            const callConfig = { ...config, masterFlow: { ...config.masterFlow, steps } };
+            try {
+                const result = await executor.execute(MASTER_FILENAME, rows, authToken, callConfig, callConfig.boundary);
+                return Array.isArray(result) ? result : fallbackRows('Batch failed: unexpected response from server');
+            } catch (err) {
+                if (String(err.message).includes('401')) throw Object.assign(new Error('Session Expired'), { status: 401 });
+                return fallbackRows(`Batch failed: ${err.message}`);
+            }
+        }
+
+        /** Rows shown when a whole call fails: one per asset (or per farmer when no assets). */
+        function failedRows(rows, message) {
+            const out = [];
+            rows.forEach(p => {
+                const base = {
+                    'User ID': p['AssignedTo User ID'], 'Farmer ID': p['Existing Farmer ID'] || '', 'Farmer Name': p['Farmer Name'],
+                    'Farmer Code': p['Farmer Code'], 'Phone Number': p['Phone Number']
+                };
+                const names = p['Asset Names'] || [];
+                if (!names.length) out.push({ ...base, 'Status': 'Fail', 'Response': message });
+                names.forEach(n => out.push({ ...base, 'Asset Name': n, 'Status': 'Fail', 'Response': message }));
+            });
+            return out;
+        }
+
+        /** Adds finished rows to the table immediately. */
+        function showRows(rows) {
+            executionResults = executionResults.concat(rows);
+            rows.forEach(r => { if (evaluateRowStatus(r, template).isPass) pass++; else fail++; });
+            processed += rows.length;
+            updateProgress(processed, totalRows, pass, fail);
+            renderExecutionResults();
+        }
+
+        function setPhase(text) { elements.executeBtn.textContent = text; }
+
+        async function runAssetGroups(planSlice, farmerResults) {
+            const groups = buildAssetGroups(planSlice, groupSize, farmerResults);
+            for (const group of groups) {
+                setPhase(`⏳ Assets ${processed + 1}–${Math.min(processed + groupSize, totalRows)} of ${totalRows}...`);
+                showRows(await callMaster(group, stepsAssetChain, msg => failedRows(group, msg)));
+            }
+        }
 
         try {
-            for (let i = 0; i < plans.length; i += farmersPerCall) {
-                const chunk = plans.slice(i, i + farmersPerCall);
-                const executor = new ScriptExecutorV2({ apiBaseUrl: envData.apiBaseUrl, debug: true });
-                let chunkResults;
-                try {
-                    chunkResults = await executor.execute(MASTER_FILENAME, chunk, authToken, config, config.boundary);
-                } catch (err) {
-                    if (String(err.message).includes('401')) throw Object.assign(new Error('Session Expired'), { status: 401 });
-                    chunkResults = chunk.map(p => ({
-                        'User ID': p['AssignedTo User ID'], 'Farmer ID': p['Existing Farmer ID'], 'Farmer Name': p['Farmer Name'],
-                        'Farmer Code': p['Farmer Code'], 'Phone Number': p['Phone Number'],
-                        'Asset Name': (p['Asset Names'] || []).join(', '),
-                        'Status': 'Fail', 'Response': `Batch failed: ${err.message}`
-                    }));
+            if (f.existing) {
+                // Existing farmers: straight to asset groups
+                await runAssetGroups(plans, null);
+            } else {
+                for (let i = 0; i < plans.length; i += groupSize) {
+                    const chunk = plans.slice(i, i + groupSize);
+                    setPhase(`⏳ Farmers ${i + 1}–${i + chunk.length} of ${plans.length}...`);
+                    // Farmer phase: master returns one row per farmer, in order
+                    const farmerOnlyRows = chunk.map(p => ({ ...p, 'Asset Names': [] }));
+                    const farmerRows = await callMaster(farmerOnlyRows, stepsFarmerOnly, msg => failedRows(farmerOnlyRows, msg));
+                    farmersDone += chunk.length;
+
+                    if (!f.withAssets) {
+                        showRows(farmerRows);
+                        continue;
+                    }
+                    // Carry each farmer's result into its asset rows (failed farmers -> assets Skipped)
+                    const farmerResults = chunk.map((p, k) => {
+                        const r = farmerRows[k] || {};
+                        const ok = r['Farmer Status'] === 'Pass' && r['Farmer ID'];
+                        return {
+                            id: ok ? String(r['Farmer ID']) : '',
+                            status: ok ? 'Pass' : 'Fail',
+                            response: ok ? '' : String(r['Response'] || 'Farmer creation failed').replace(/^Farmer:\s*/, '')
+                        };
+                    });
+                    await runAssetGroups(chunk, farmerResults);
                 }
-                executionResults = executionResults.concat(chunkResults);
-                chunkResults.forEach(r => { if (evaluateRowStatus(r, template).isPass) pass++; else fail++; });
-                processed += chunk.length;
-                updateProgress(processed, total, pass, fail);
-                renderExecutionResults();
             }
         } catch (error) {
             console.error('[MasterFlow] Execution stopped:', error);
             if (error.status === 401) {
-                alert(`🛑 Session Expired\n\nStopped after ${processed} of ${total} farmer(s). Re-login and run again for the remaining farmers (adjust the first Name/Code/Phone and Asset Prefix).`);
+                alert(`🛑 Session Expired\n\nStopped after ${processed} of ${totalRows} row(s)${f.existing ? '' : ` (${farmersDone} farmer(s) created or attempted)`}. Re-login and run again for the remaining data (adjust the first Name/Code/Phone and Asset Prefix).`);
             } else {
                 alert('Execution Interrupted: ' + error.message);
             }
@@ -377,6 +484,6 @@
         refresh,
         execute,
         // exported for tests
-        _helpers: { incrementTrailingNumber, toScriptPhone, buildAssetNames, buildFarmerPlans, splitList }
+        _helpers: { incrementTrailingNumber, seriesValue, toScriptPhone, buildAssetNames, buildFarmerPlans, buildAssetGroups, splitList }
     };
 })();
