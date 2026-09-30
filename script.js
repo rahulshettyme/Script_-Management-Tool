@@ -221,6 +221,9 @@ function fullLogout() {
         elements.uploadWorkflowContainer.style.opacity = '0.5';
         elements.uploadWorkflowContainer.style.pointerEvents = 'none';
     }
+
+    // QA Data Setup (Master): keep its own button label after logout
+    if (window.MasterFlow) window.MasterFlow.refresh();
 }
 
 // Template Definitions

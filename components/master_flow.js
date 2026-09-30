@@ -43,7 +43,8 @@
         summary: $('mf-summary'),
         fileUploadArea: $('file-upload-area'),
         startRowInput: $('start-row-input'),
-        exportBtn: $('export-btn')
+        exportBtn: $('export-btn'),
+        importBtn: $('import-btn')
     };
     if (!ui.panel) return;
 
@@ -163,8 +164,8 @@
         if (f.withAssets) {
             if (!f.assetPrefix.trim()) errors.push('Enter an Asset Name Prefix.');
             if (f.assetsPerFarmer < 1) errors.push('Assets per Farmer must be at least 1.');
-            if (!f.soilType) errors.push('Enter Soil Type.');
-            if (!f.irrigationType) errors.push('Enter Irrigation Type.');
+            if (!f.soilType) errors.push('Select Soil Type.');
+            if (!f.irrigationType) errors.push('Select Irrigation Type.');
             if (!f.assetAddress) errors.push('Enter Asset Address.');
             if (f.declaredArea === '' || isNaN(Number(f.declaredArea))) errors.push('Declared Area must be a number.');
         }
@@ -241,11 +242,31 @@
         }
     }
 
+    /** This script needs no template: label the login action as data creation (master only). */
+    const IMPORT_BTN_MASTER_TEXT = '🔐 Login and Create Data';
+    const IMPORT_LABEL_MASTER_TEXT = 'Create Data';
+    const importGroup = ui.importBtn ? ui.importBtn.closest('.form-group') : null;
+    const importLabel = importGroup ? importGroup.querySelector('label') : null;
+    const importLabelDefault = importLabel ? importLabel.textContent.replace(/\s+/g, ' ').trim() : '';
+
+    function setImportButtonForMaster(active) {
+        if (!ui.importBtn) return;
+        if (active) {
+            ui.importBtn.textContent = IMPORT_BTN_MASTER_TEXT;
+            if (importLabel) importLabel.textContent = IMPORT_LABEL_MASTER_TEXT;
+        } else if (ui.importBtn.textContent === IMPORT_BTN_MASTER_TEXT) {
+            // Restore defaults only if we changed them (other scripts set their own text)
+            ui.importBtn.textContent = '📤 Login and Import Template';
+            if (importLabel) importLabel.textContent = importLabelDefault;
+        }
+    }
+
     /** Called by script.js after a script is selected, after login, and on reset. */
     function refresh() {
         const active = isMasterSelected();
         ui.panel.classList.toggle('hidden', !active);
         setUploadControlsVisible(!active);
+        setImportButtonForMaster(active);
         if (!active) return;
         if (elements.templateInfo) elements.templateInfo.classList.add('hidden');
         if (elements.advancedSettingsSection) elements.advancedSettingsSection.classList.add('hidden');
