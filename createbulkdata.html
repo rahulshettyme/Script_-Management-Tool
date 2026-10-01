@@ -778,6 +778,13 @@
                     <p style="margin: 0 0 0.75rem 0; color: #666; font-size: 0.75rem;">Runs the selected steps in order and
                         stops after the last selected step. Area Audit and Crop/DOS run on the CAs created here.</p>
 
+                    <!-- Login status: the form is locked until login + user info succeed -->
+                    <div id="mf-login-notice"
+                        style="margin-bottom: 0.75rem; padding: 0.6rem 0.75rem; border-radius: 4px; font-size: 0.8rem; background: #fff3cd; border: 1px solid #ffe08a; color: #7a5b00;">
+                        🔐 Login is required for this script. Log in on the right to start.
+                    </div>
+                    <div id="mf-form-body">
+
                     <!-- Step 1: Farmer -->
                     <div class="master-step" style="padding: 0.6rem; background: #fff; border: 1px solid #e0e6ef; border-radius: 4px; margin-bottom: 0.6rem;">
                         <label style="font-weight: 600; font-size: 0.85rem; display: flex; gap: 8px; align-items: center;">
@@ -787,16 +794,30 @@
                             <input type="checkbox" id="mf-existing-farmer"> Add for existing farmer (skip Add Farmer)
                         </label>
                         <div id="mf-existing-farmer-fields" class="hidden">
-                            <div class="form-group" style="margin-bottom: 0;">
-                                <label for="mf-existing-farmer-ids">Existing Farmer ID(s) * <small>(comma separated)</small></label>
-                                <input type="text" id="mf-existing-farmer-ids" class="boundary-input" placeholder="e.g. 5770850, 5770851">
+                            <div class="form-group" style="margin-bottom: 0; position: relative;">
+                                <label for="mf-farmer-search">Existing Farmer(s) * <small>(search, multi-select)</small></label>
+                                <input type="text" id="mf-farmer-search" class="boundary-input" autocomplete="off"
+                                    placeholder="Type at least 3 characters, e.g. RS Te">
+                                <!-- selected farmer IDs (comma separated) used by the asset step -->
+                                <input type="hidden" id="mf-existing-farmer-ids">
+                                <div id="mf-farmer-results" class="hidden"
+                                    style="position: absolute; z-index: 20; left: 0; right: 0; max-height: 220px; overflow-y: auto; background: #fff; border: 1px solid #d6e0f0; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); font-size: 0.8rem;">
+                                </div>
+                                <div id="mf-farmer-chips" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;"></div>
                             </div>
                         </div>
                         <div id="mf-new-farmer-fields">
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
-                                <div class="form-group" style="margin-bottom: 0;">
-                                    <label for="mf-user-ids">AssignedTo User ID(s) * <small>(comma separated)</small></label>
-                                    <input type="text" id="mf-user-ids" class="boundary-input" placeholder="e.g. 1234, 5678">
+                                <div class="form-group" style="margin-bottom: 0; position: relative;">
+                                    <label for="mf-user-search">Assigned To User(s) * <small>(search, multi-select)</small></label>
+                                    <input type="text" id="mf-user-search" class="boundary-input" autocomplete="off"
+                                        placeholder="Type at least 3 characters, e.g. RS A">
+                                    <!-- selected user IDs (comma separated) used by the farmer step -->
+                                    <input type="hidden" id="mf-user-ids">
+                                    <div id="mf-user-results" class="hidden"
+                                        style="position: absolute; z-index: 20; left: 0; right: 0; max-height: 220px; overflow-y: auto; background: #fff; border: 1px solid #d6e0f0; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); font-size: 0.8rem;">
+                                    </div>
+                                    <div id="mf-user-chips" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;"></div>
                                 </div>
                                 <div class="form-group" style="margin-bottom: 0;">
                                     <label for="mf-farmers-per-user">Farmers per User *</label>
@@ -842,37 +863,13 @@
                             <div class="form-group" style="margin-bottom: 0;">
                                 <label for="mf-soil-type">Soil Type *</label>
                                 <select id="mf-soil-type" class="material-input">
-                                    <option value="">Select soil type</option>
-                                    <option value="Black">Black</option>
-                                    <option value="Clay Loam">Clay Loam</option>
-                                    <option value="Lime">Lime</option>
-                                    <option value="Loam">Loam</option>
-                                    <option value="Medium">Medium</option>
-                                    <option value="Red">Red</option>
-                                    <option value="Sandy">Sandy</option>
-                                    <option value="Sandy Clay">Sandy Clay</option>
-                                    <option value="Sandy Clay Loam">Sandy Clay Loam</option>
-                                    <option value="Sandy Loam">Sandy Loam</option>
-                                    <option value="Silt Clay">Silt Clay</option>
-                                    <option value="Silt Loam">Silt Loam</option>
+                                    <option value="">Log in to load soil types</option>
                                 </select>
                             </div>
                             <div class="form-group" style="margin-bottom: 0;">
                                 <label for="mf-irrigation-type">Irrigation Type *</label>
                                 <select id="mf-irrigation-type" class="material-input">
-                                    <option value="">Select irrigation type</option>
-                                    <option value="Basin Irrigation">Basin Irrigation</option>
-                                    <option value="Bore well">Bore well</option>
-                                    <option value="Canal">Canal</option>
-                                    <option value="CentrePivot">CentrePivot</option>
-                                    <option value="Dam">Dam</option>
-                                    <option value="Drip">Drip</option>
-                                    <option value="Flood">Flood</option>
-                                    <option value="Rain fed">Rain fed</option>
-                                    <option value="River">River</option>
-                                    <option value="Sprinkler">Sprinkler</option>
-                                    <option value="Store tank">Store tank</option>
-                                    <option value="Well">Well</option>
+                                    <option value="">Log in to load irrigation types</option>
                                 </select>
                             </div>
                             <div class="form-group" style="margin-bottom: 0;">
@@ -891,9 +888,16 @@
                         <label style="font-weight: 600; font-size: 0.85rem; display: flex; gap: 8px; align-items: center;">
                             <input type="checkbox" id="mf-step-validate" checked> 3. Assign &amp; Validate Asset to Project
                         </label>
-                        <div id="mf-validate-fields" class="form-group" style="margin: 0.4rem 0 0 0;">
-                            <label for="mf-project-id">Project ID *</label>
-                            <input type="number" id="mf-project-id" class="boundary-input" placeholder="e.g. 5827901">
+                        <div id="mf-validate-fields" class="form-group" style="margin: 0.4rem 0 0 0; position: relative;">
+                            <label for="mf-project-search">Project * <small>(search, single select)</small></label>
+                            <input type="text" id="mf-project-search" class="boundary-input" autocomplete="off"
+                                placeholder="Type at least 3 characters, e.g. RS N">
+                            <!-- selected project ID used by the Assign & Validate step -->
+                            <input type="hidden" id="mf-project-id">
+                            <div id="mf-project-results" class="hidden"
+                                style="position: absolute; z-index: 20; left: 0; right: 0; max-height: 220px; overflow-y: auto; background: #fff; border: 1px solid #d6e0f0; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); font-size: 0.8rem;">
+                            </div>
+                            <div id="mf-project-chips" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;"></div>
                         </div>
                     </div>
 
@@ -911,9 +915,16 @@
                             <input type="checkbox" id="mf-step-edit-ca"> 5. Add Variety and/or DOS to CA <small style="font-weight: 400;">(optional)</small>
                         </label>
                         <div id="mf-edit-ca-fields" class="hidden" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-top: 0.4rem;">
-                            <div class="form-group" style="margin-bottom: 0;">
-                                <label for="mf-variety-name">Variety Name</label>
-                                <input type="text" id="mf-variety-name" class="boundary-input" placeholder="e.g. Tomato Hybrid">
+                            <div class="form-group" style="margin-bottom: 0; position: relative;">
+                                <label for="mf-variety-search">Variety <small>(search, single select)</small></label>
+                                <input type="text" id="mf-variety-search" class="boundary-input" autocomplete="off"
+                                    placeholder="Type at least 3 characters, e.g. RS PR">
+                                <!-- selected variety ID (the name is sent to Crop & DOS, which maps it to this id) -->
+                                <input type="hidden" id="mf-variety-id">
+                                <div id="mf-variety-results" class="hidden"
+                                    style="position: absolute; z-index: 20; left: 0; right: 0; max-height: 220px; overflow-y: auto; background: #fff; border: 1px solid #d6e0f0; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.12); font-size: 0.8rem;">
+                                </div>
+                                <div id="mf-variety-chips" style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;"></div>
                             </div>
                             <div class="form-group" style="margin-bottom: 0;">
                                 <label for="mf-dos">Date of Sowing</label>
@@ -923,6 +934,7 @@
                     </div>
 
                     <p id="mf-summary" style="margin: 0.75rem 0 0 0; font-size: 0.8rem; color: #1565c0;"></p>
+                    </div><!-- /mf-form-body -->
                 </div>
 
                 <!-- Boundary Configuration (shown for coordinates type) -->

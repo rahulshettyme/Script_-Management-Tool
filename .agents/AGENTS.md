@@ -13,3 +13,11 @@
 - **Geocoding Key Standardization:** The application must strictly use the official `Geocoding_api_key` key (loaded from `env_config.get('Geocoding_api_key')`) for all geocoding, address, and geolocation tasks.
 - **GOOGLE_API_KEY Restriction:** The `GOOGLE_API_KEY` (loaded from the user's personal config/environment) is restricted ONLY for script creation/onboarding (calling Gemini API to generate scripts).
 - **Backend Key Injection:** The Node.js backend must always inject `Geocoding_api_key` (obtained via `getGeocodingApiKey()`) into the `envConfig` payload before spawning or testing any Python scripts.
+
+## SOP & Regression Rules (see PROJECT_RULES.md for the full text)
+- BEFORE changing script creation, execution, movement/sync, or the QA Data Setup (Master) flow, read the matching SOP in `SOP/` (index: `SOP/README.md`).
+- Look things up in the SOP first; if missing, find it in code and add it to the SOP in the same task. Update the SOP (and its change log) whenever a change alters documented behavior, and call that edit out.
+- On every code change run `python "Internal Tests/run_regression.py"` (skill: `.agents/skills/regression_guard/SKILL.md` → `.claude/skills/regression-guard/SKILL.md`) and report X/X passing (existing vs new).
+- Shared execution path changes must be opt-in so legacy scripts run exactly as before.
+- `SOP/`, `Internal Tests/`, `.claude/`, `.agents/` are internal: tracked in git, never inside the sync-push folders (`backend/`, `System/`, `Converted Scripts/`, `components/`).
+- Every change response lists: new files, modified files, why, testing risks, impact areas, commit message (message only - never commit/push).

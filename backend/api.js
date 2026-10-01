@@ -176,6 +176,61 @@ function handleGetRequest(req, res, pathSuffix, logPrefix) {
     proxyReq.end();
 }
 
+// Helper for POST requests with a JSON body (same auth/env/origin handling as handleGetRequest)
+function handlePostJsonRequest(req, res, pathSuffix, body, logPrefix) {
+    const { environment } = req.query;
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ error: 'Missing token' });
+    }
+
+    const { apiBaseUrl, frontendUrl } = getEnvUrls(environment);
+    if (!apiBaseUrl) {
+        return res.status(400).json({ error: `Unknown environment: ${environment}` });
+    }
+
+    const urlObj = new URL(`${apiBaseUrl}${pathSuffix}`);
+    const payload = JSON.stringify(body || {});
+    const options = {
+        hostname: urlObj.hostname,
+        port: 443,
+        path: urlObj.pathname + urlObj.search,
+        method: 'POST',
+        headers: {
+            'Authorization': authHeader,
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(payload),
+            'origin': frontendUrl || apiBaseUrl,
+            'referer': (frontendUrl || apiBaseUrl) + '/'
+        }
+    };
+
+    const proxyReq = https.request(options, (proxyRes) => {
+        let data = '';
+        proxyRes.on('data', chunk => data += chunk);
+        proxyRes.on('end', () => {
+            if (proxyRes.statusCode >= 200 && proxyRes.statusCode < 300) {
+                try {
+                    res.json(JSON.parse(data));
+                } catch (e) {
+                    res.status(500).json({ error: 'Failed to parse response' });
+                }
+            } else {
+                console.error(`${logPrefix} Upstream ${proxyRes.statusCode}`);
+                res.status(proxyRes.statusCode).json({ error: 'Upstream error' });
+            }
+        });
+    });
+
+    proxyReq.on('error', (e) => {
+        res.status(500).json({ error: 'Request failed: ' + e.message });
+    });
+    proxyReq.write(payload);
+    proxyReq.end();
+}
+
 module.exports = function (app) {
     // POST /api/geocode - Get address components from Google Geocoding API
     app.post('/api/geocode', async (req, res) => {
@@ -380,6 +435,19 @@ module.exports = function (app) {
         handleGetRequest(req, res, '/services/farm/api/irrigation-types', '[Irrigation Types]');
     });
 
+    // GET /api/data-generate/asset-masters?type=soil|irrigation - full lists for the QA Data Setup dropdowns.
+    // Irrigation uses the same endpoint Add Asset's master_search looks names up in (db.json master_data_config),
+    // so every name in the dropdown is one the script can map to its tenant id.
+    app.get('/api/data-generate/asset-masters', (req, res) => {
+        const ENDPOINTS = {
+            soil: '/services/farm/api/soil-types?size=5000',
+            irrigation: '/services/master/api/irrigation-types?size=5000'
+        };
+        const endpoint = ENDPOINTS[req.query.type];
+        if (!endpoint) return res.status(400).json({ error: `Unsupported type: ${req.query.type}` });
+        handleGetRequest(req, res, endpoint, `[Asset Masters:${req.query.type}]`);
+    });
+
     // POST /api/data-generate/create-asset
     app.post('/api/data-generate/create-asset', async (req, res) => {
         const { environment, tenant, asset } = req.body;
@@ -477,6 +545,48 @@ module.exports = function (app) {
     // GET /api/data-generate/company-config - Get Company Config (Hardcoded ID 1251)
     app.get('/api/data-generate/company-config', (req, res) => {
         handleGetRequest(req, res, '/services/farm/api/companies/1251', '[Company Config]');
+    });
+
+    // GET /api/data-generate/user-search?companyId=1251&query=rs%20a - Search users of a company (min 3 chars)
+    app.get('/api/data-generate/user-search', (req, res) => {
+        const companyId = String(req.query.companyId || '').trim();
+        const query = String(req.query.query || '').trim();
+        if (!/^\d+$/.test(companyId)) return res.status(400).json({ error: 'Valid companyId is required' });
+        if (query.length < 3) return res.status(400).json({ error: 'Enter at least 3 characters to search' });
+        handleGetRequest(req, res, `/services/user/api/users/search/companies/${companyId}?query=${encodeURIComponent(query)}`, '[User Search]');
+    });
+
+    // GET /api/data-generate/farmer-search?query=rs%20te&size=51 - Search farmers by name (min 3 chars)
+    app.get('/api/data-generate/farmer-search', (req, res) => {
+        const query = String(req.query.query || '').trim();
+        if (query.length < 3) return res.status(400).json({ error: 'Enter at least 3 characters to search' });
+        let size = parseInt(req.query.size, 10);
+        if (!Number.isFinite(size) || size < 1 || size > 100) size = 100;
+        handleGetRequest(req, res,
+            `/services/farm/api/farmers/dropdownList?page=0&size=${size}&sort=lastModifiedDate,Desc&query=${encodeURIComponent(query)}`,
+            '[Farmer Search]');
+    });
+
+    // GET /api/data-generate/project-search?query=rs%20n&size=51 - Search LIVE/UPCOMING projects (min 3 chars)
+    app.get('/api/data-generate/project-search', (req, res) => {
+        const query = String(req.query.query || '').trim();
+        if (query.length < 3) return res.status(400).json({ error: 'Enter at least 3 characters to search' });
+        let size = parseInt(req.query.size, 10);
+        if (!Number.isFinite(size) || size < 1 || size > 100) size = 100;
+        handleGetRequest(req, res,
+            `/services/farm/api/projects/search?page=0&size=${size}&projectStatus=LIVE&projectExecutionStatus=TO_BE_STARTED` +
+            `&projectExecutionStatus=STARTED&projectStatus=UPCOMING&query=${encodeURIComponent(query)}`,
+            '[Project Search]');
+    });
+
+    // GET /api/data-generate/variety-search?query=rs%20pr - Search crop varieties (min 3 chars).
+    // Upstream is a POST with {search} - the same call Add/Update Crop & DOS uses to map a variety name to its id.
+    // Response is crops with varieties nested in 'children'; the UI flattens them.
+    app.get('/api/data-generate/variety-search', (req, res) => {
+        const query = String(req.query.query || '').trim();
+        if (query.length < 3) return res.status(400).json({ error: 'Enter at least 3 characters to search' });
+        handlePostJsonRequest(req, res, '/services/farm/api/crops/details/filter?page=0&size=100&sort=name,asc',
+            { search: query }, '[Variety Search]');
     });
 
     // GET /api/data-generate/user-info - Get User Info

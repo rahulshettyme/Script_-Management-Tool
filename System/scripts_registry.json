@@ -2477,18 +2477,18 @@
       "isDynamicUI": true,
       "uiMapping": [
         {
-          "colName": "User ID",
-          "value": "User ID",
-          "logic": "Mapped from master script output"
-        },
-        {
-          "colName": "Farmer ID",
-          "value": "Farmer ID",
+          "colName": "User Name",
+          "value": "User Name",
           "logic": "Mapped from master script output"
         },
         {
           "colName": "Farmer Name",
           "value": "Farmer Name",
+          "logic": "Mapped from master script output"
+        },
+        {
+          "colName": "Farmer ID",
+          "value": "Farmer ID",
           "logic": "Mapped from master script output"
         },
         {
@@ -2502,13 +2502,13 @@
           "logic": "Mapped from master script output"
         },
         {
-          "colName": "Asset ID",
-          "value": "Asset ID",
+          "colName": "Asset Name",
+          "value": "Asset Name",
           "logic": "Mapped from master script output"
         },
         {
-          "colName": "Asset Name",
-          "value": "Asset Name",
+          "colName": "Asset ID",
+          "value": "Asset ID",
           "logic": "Mapped from master script output"
         },
         {

@@ -38,13 +38,27 @@
         stepAreaAudit: $('mf-step-area-audit'),
         stepEditCa: $('mf-step-edit-ca'),
         editCaFields: $('mf-edit-ca-fields'),
-        varietyName: $('mf-variety-name'),
+        varietyId: $('mf-variety-id'),
+        varietySearch: $('mf-variety-search'),
+        varietyResults: $('mf-variety-results'),
+        varietyChips: $('mf-variety-chips'),
         dos: $('mf-dos'),
         summary: $('mf-summary'),
         fileUploadArea: $('file-upload-area'),
         startRowInput: $('start-row-input'),
         exportBtn: $('export-btn'),
-        importBtn: $('import-btn')
+        importBtn: $('import-btn'),
+        loginNotice: $('mf-login-notice'),
+        formBody: $('mf-form-body'),
+        userSearch: $('mf-user-search'),
+        userResults: $('mf-user-results'),
+        userChips: $('mf-user-chips'),
+        farmerSearch: $('mf-farmer-search'),
+        farmerResults: $('mf-farmer-results'),
+        farmerChips: $('mf-farmer-chips'),
+        projectSearch: $('mf-project-search'),
+        projectResults: $('mf-project-results'),
+        projectChips: $('mf-project-chips')
     };
     if (!ui.panel) return;
 
@@ -91,7 +105,7 @@
 
     /**
      * Builds one plan row per farmer.
-     * opts: { existing, existingIds[], userIds[], farmersPerUser, name, code, phone, withAssets, assetPrefix, assetsPerFarmer }
+     * opts: { existing, existingIds[], userIds[], userNames{id: name}, farmersPerUser, name, code, phone, withAssets, assetPrefix, assetsPerFarmer }
      */
     function buildFarmerPlans(opts) {
         const plans = [];
@@ -111,6 +125,7 @@
                         'Farmer Code': seriesValue(opts.code, k, total),
                         'Phone Number': toScriptPhone(seriesValue(opts.phone, k, total)),
                         'AssignedTo User ID': userId,
+                        'AssignedTo User Name': (opts.userNames && opts.userNames[userId]) || '',   // display only
                         'Existing Farmer ID': ''
                     });
                 }
@@ -172,6 +187,7 @@
             existing,
             existingIds: splitList(ui.existingIds.value),
             userIds: splitList(ui.userIds.value),
+            userNames: Object.fromEntries(userPicker.getSelected().map(u => [u.id, u.name])),
             farmersPerUser: intVal(ui.farmersPerUser),
             name: ui.farmerName.value.trim(),
             code: ui.farmerCode.value.trim(),
@@ -180,15 +196,19 @@
             withAssets,
             assetPrefix: ui.assetPrefix.value,
             assetsPerFarmer: intVal(ui.assetsPerFarmer),
-            soilType: ui.soilType.value.trim(),
-            irrigationType: ui.irrigationType.value.trim(),
+            // dropdown value is the id; Add Asset takes the name and maps it to the id itself
+            soilType: (selectedMaster('soil', ui.soilType) || {}).name || '',
+            soilTypeId: (selectedMaster('soil', ui.soilType) || {}).id || '',
+            irrigationType: (selectedMaster('irrigation', ui.irrigationType) || {}).name || '',
+            irrigationTypeId: (selectedMaster('irrigation', ui.irrigationType) || {}).id || '',
             assetAddress: ui.assetAddress.value.trim(),
             declaredArea: ui.declaredArea.value.trim(),
             validate: withAssets && ui.stepValidate.checked,
             projectId: ui.projectId.value.trim(),
             areaAudit: withAssets && ui.stepValidate.checked && ui.stepAreaAudit.checked,
             editCa: withAssets && ui.stepValidate.checked && ui.stepEditCa.checked,
-            varietyName: ui.varietyName.value.trim(),
+            varietyName: (selectedVariety() || {}).name || '',
+            varietyId: (selectedVariety() || {}).id || '',
             dos: ui.dos.value
         };
     }
@@ -196,12 +216,12 @@
     function validate(f) {
         const errors = [];
         if (f.existing) {
-            if (!f.existingIds.length) errors.push('Enter at least one existing Farmer ID.');
-            if (f.existingIds.some(id => !/^\d+$/.test(id))) errors.push('Existing Farmer IDs must be numbers.');
+            if (!f.existingIds.length) errors.push('Select at least one existing farmer (search by name).');
+            if (f.existingIds.some(id => !/^\d+$/.test(id))) errors.push('Selected farmer IDs must be numbers.');
             if (!f.withAssets) errors.push('With existing farmers, select at least "Add Asset".');
         } else {
-            if (!f.userIds.length) errors.push('Enter at least one AssignedTo User ID.');
-            if (f.userIds.some(id => !/^\d+$/.test(id))) errors.push('AssignedTo User IDs must be numbers.');
+            if (!f.userIds.length) errors.push('Select at least one Assigned To user (search by name).');
+            if (f.userIds.some(id => !/^\d+$/.test(id))) errors.push('Selected user IDs must be numbers.');
             if (f.farmersPerUser < 1) errors.push('Farmers per User must be at least 1.');
             if (!f.name) errors.push('Enter First Farmer Name.');
             if (!f.code) errors.push('Enter First Farmer Code.');
@@ -215,14 +235,14 @@
             if (!f.assetAddress) errors.push('Enter Asset Address.');
             if (f.declaredArea === '' || isNaN(Number(f.declaredArea))) errors.push('Declared Area must be a number.');
         }
-        if (f.validate && !/^\d+$/.test(f.projectId)) errors.push('Enter a numeric Project ID.');
+        if (f.validate && !/^\d+$/.test(f.projectId)) errors.push('Select a project (search by name).');
         if (f.areaAudit) {
             const b = [elements.minLat, elements.maxLat, elements.minLong, elements.maxLong];
             if (b.some(el => !el || el.value === '' || isNaN(Number(el.value)))) {
                 errors.push('Area Audit: set Min/Max Latitude and Longitude (use Resolve or a saved location).');
             }
         }
-        if (f.editCa && !f.varietyName && !f.dos) errors.push('Crop/DOS step: enter Variety Name and/or Date of Sowing.');
+        if (f.editCa && !f.varietyName && !f.dos) errors.push('Crop/DOS step: select a Variety and/or enter Date of Sowing.');
         return errors;
     }
 
@@ -308,6 +328,398 @@
         }
     }
 
+    // ---------------- Mandatory login + user info ----------------
+    // Master APIs need the logged-in user's context, so the form stays locked until
+    // login succeeds AND user-info returns a companyId.
+
+    let session = null;          // { key, companyId, userId, userName, raw }
+    let sessionLoad = null;      // in-flight user-info promise
+    let failedKey = null;        // login whose user-info failed: no auto-retry (prevents a request loop), only via Retry
+
+    function sessionKey() {
+        return authToken ? `${currentEnvironment}|${currentTenant}|${authToken.slice(-16)}` : null;
+    }
+
+    function setNotice(kind, html) {
+        if (!ui.loginNotice) return;
+        const styles = {
+            login: 'background:#fff3cd;border:1px solid #ffe08a;color:#7a5b00;',
+            loading: 'background:#e3f2fd;border:1px solid #90caf9;color:#0d47a1;',
+            ok: 'background:#e8f5e9;border:1px solid #c8e6c9;color:#1b5e20;',
+            error: 'background:#fdecea;border:1px solid #f5c2c0;color:#8a1c14;'
+        };
+        ui.loginNotice.style.cssText = 'margin-bottom:0.75rem;padding:0.6rem 0.75rem;border-radius:4px;font-size:0.8rem;' + styles[kind];
+        ui.loginNotice.innerHTML = html;
+    }
+
+    function setFormLocked(locked) {
+        if (!ui.formBody) return;
+        ui.formBody.style.opacity = locked ? '0.5' : '';
+        ui.formBody.style.pointerEvents = locked ? 'none' : '';
+        ui.formBody.setAttribute('aria-disabled', locked ? 'true' : 'false');
+    }
+
+    function escapeHtml(v) {
+        return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    /** Shows the login form straight away (no template import step for this script). */
+    function showLoginSection() {
+        if (elements.loginSection) elements.loginSection.classList.remove('hidden');
+        if (elements.loginComponentContainer) elements.loginComponentContainer.classList.remove('hidden');
+    }
+
+    /** GET user-info once per login; stores companyId for master APIs. */
+    function loadSession() {
+        const key = sessionKey();
+        if (!key) { session = null; return Promise.resolve(null); }
+        if (session && session.key === key) return Promise.resolve(session);
+        if (failedKey === key) return Promise.resolve(null);
+        if (sessionLoad) return sessionLoad;
+
+        setNotice('loading', '⏳ Logged in. Fetching user details...');
+        const query = `environment=${encodeURIComponent(currentEnvironment)}&tenant=${encodeURIComponent(currentTenant)}`;
+        sessionLoad = fetch(`/api/data-generate/user-info?${query}`, { headers: { 'Authorization': `Bearer ${authToken}` } })
+            .then(async res => {
+                if (!res.ok) throw new Error(res.status === 401 ? 'Session expired - please log in again' : `HTTP ${res.status}`);
+                const info = await res.json();
+                if (!info || info.companyId == null) throw new Error('companyId not found in user-info response');
+                session = { key, companyId: info.companyId, userId: info.id, userName: info.name || '', raw: info };
+                failedKey = null;
+                return session;
+            })
+            .catch(err => {
+                console.error('[MasterFlow] user-info failed:', err);
+                session = null;
+                failedKey = key;
+                setNotice('error', `⚠ Could not load user details: ${escapeHtml(err.message)}. ` +
+                    `<a href="#" id="mf-retry-session">Retry</a>`);
+                const retry = $('mf-retry-session');
+                if (retry) retry.addEventListener('click', e => { e.preventDefault(); failedKey = null; refresh(); });
+                return null;
+            })
+            .finally(() => { sessionLoad = null; });
+        return sessionLoad.then(s => { if (isMasterSelected()) applySessionState(); return s; });
+    }
+
+    /** Lock/unlock the form and update the notice from the current login/session state. */
+    function applySessionState() {
+        if (!authToken) {
+            session = null;
+            setFormLocked(true);
+            setNotice('login', '🔐 Login is required for this script. Log in on the right to start.');
+            showLoginSection();
+            return;
+        }
+        if (session && session.key === sessionKey()) {
+            resetPickersForSession();
+            loadAssetMasters();
+            setFormLocked(false);
+            setNotice('ok', `✅ Logged in as <strong>${escapeHtml(session.userName)}</strong> ` +
+                `(User ID ${escapeHtml(session.userId)}) · Company ID <strong>${escapeHtml(session.companyId)}</strong>`);
+            enableRun();
+            return;
+        }
+        setFormLocked(true);
+        if (failedKey === sessionKey()) return;   // keep the error + Retry link; don't re-request
+        loadSession();
+    }
+
+    // ---------------- Search pickers (multi-select) ----------------
+    // Shared by Assigned To users and Existing Farmers: type 3+ chars -> debounced search ->
+    // results show "name (ID id)" -> click to select/deselect -> selected 'id's go to a hidden input.
+
+    const SEARCH_MIN_CHARS = 3;
+    const SEARCH_DEBOUNCE_MS = 350;
+    // Max rows drawn in a search dropdown. The list has a fixed height + scroll, so this only
+    // bounds DOM rows; users narrow the search for more.
+    const SEARCH_MAX_RESULTS = 50;
+
+    /** Search response -> [{id, name}] (list may be bare or wrapped in data/content/items). */
+    function toItems(payload, nameField) {
+        const list = Array.isArray(payload) ? payload : ((payload && (payload.data || payload.content || payload.items)) || []);
+        return list
+            .filter(it => it && it.id != null)
+            .map(it => ({ id: String(it.id), name: String(it[nameField] || '').trim() || `ID ${it.id}` }));
+    }
+    const toUsers = payload => toItems(payload, 'name');
+    const toFarmers = payload => toItems(payload, 'firstName');
+
+    /**
+     * opts: { input, results, chips, hidden, noun, buildUrl(query) -> url, parse(json) -> [{id,name}],
+     *         totalKnown (true when the API returns all matches, so the total can be shown),
+     *         single (true = one selection; picking another result replaces it), plural (default noun + 's') }
+     */
+    function createSearchPicker(opts) {
+        let selected = [];          // [{ id, name }]
+        let forKey = null;          // session the selection belongs to
+        let timer = null;
+        let seq = 0;                // drops out-of-order responses
+        let lastResults = [];
+        const label = it => `${it.name} (ID ${it.id})`;
+        const plural = opts.plural || `${opts.noun}s`;
+
+        function sync() {
+            if (opts.hidden) opts.hidden.value = selected.map(it => it.id).join(', ');
+            renderChips();
+            updateSummary();
+            enableRun();
+        }
+
+        function renderChips() {
+            if (!opts.chips) return;
+            opts.chips.innerHTML = '';
+            selected.forEach(it => {
+                const chip = document.createElement('span');
+                chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;padding:3px 4px 3px 8px;background:#e3f2fd;border:1px solid #90caf9;border-radius:12px;font-size:0.75rem;color:#0d47a1;';
+                chip.textContent = label(it);
+                const remove = document.createElement('button');
+                remove.type = 'button';
+                remove.textContent = '×';
+                remove.title = `Remove ${it.name}`;
+                remove.style.cssText = 'border:none;background:transparent;color:#0d47a1;cursor:pointer;font-size:0.9rem;line-height:1;padding:0 4px;';
+                remove.addEventListener('click', () => toggle(it));
+                chip.appendChild(remove);
+                opts.chips.appendChild(chip);
+            });
+        }
+
+        function message(text) {
+            if (!opts.results) return;
+            opts.results.innerHTML = '';
+            const msg = document.createElement('div');
+            msg.style.cssText = 'padding:8px 10px;color:#666;';
+            msg.textContent = text;
+            opts.results.appendChild(msg);
+            opts.results.classList.remove('hidden');
+        }
+
+        function renderResults(items) {
+            lastResults = items;
+            if (!opts.results) return;
+            if (!items.length) return message(`No ${plural} found`);
+            opts.results.innerHTML = '';
+            items.slice(0, SEARCH_MAX_RESULTS).forEach(it => {
+                const isSel = selected.some(s => s.id === it.id);
+                const row = document.createElement('div');
+                row.style.cssText = `padding:7px 10px;cursor:pointer;border-bottom:1px solid #f0f0f0;${isSel ? 'background:#e8f5e9;font-weight:600;' : ''}`;
+                row.textContent = `${isSel ? '✓ ' : ''}${label(it)}`;
+                // mousedown (not click) so the input's blur doesn't close the list first
+                row.addEventListener('mousedown', e => { e.preventDefault(); toggle(it); });
+                opts.results.appendChild(row);
+            });
+            if (items.length > SEARCH_MAX_RESULTS) {
+                const more = document.createElement('div');
+                more.style.cssText = 'padding:7px 10px;color:#7a5b00;background:#fff8e1;font-size:0.75rem;';
+                more.textContent = opts.totalKnown
+                    ? `Showing first ${SEARCH_MAX_RESULTS} of ${items.length} matches. Type more characters to narrow the search.`
+                    : `Showing first ${SEARCH_MAX_RESULTS} matches. Type more characters to narrow the search.`;
+                opts.results.appendChild(more);
+            }
+            opts.results.classList.remove('hidden');
+        }
+
+        function toggle(item) {
+            if (selected.some(s => s.id === item.id)) selected = selected.filter(s => s.id !== item.id);
+            else if (opts.single) selected = [{ id: item.id, name: item.name }];   // replace the current choice
+            else selected = selected.concat([{ id: item.id, name: item.name }]);
+            sync();
+            if (opts.results && !opts.results.classList.contains('hidden') && lastResults.length) renderResults(lastResults);
+        }
+
+        async function search(query) {
+            const mySeq = ++seq;
+            if (!sessionReady()) return message(`Log in first to search ${plural}`);
+            message('Searching...');
+            try {
+                const res = await fetch(opts.buildUrl(query), { headers: { 'Authorization': `Bearer ${authToken}` } });
+                if (mySeq !== seq) return;
+                if (!res.ok) throw new Error(res.status === 401 ? 'session expired, please log in again' : `HTTP ${res.status}`);
+                const items = opts.parse(await res.json());
+                if (mySeq !== seq) return;
+                renderResults(items);
+            } catch (e) {
+                if (mySeq !== seq) return;
+                console.error(`[MasterFlow] ${opts.noun} search failed:`, e);
+                message(`Search failed: ${e.message}`);
+            }
+        }
+
+        function onInput() {
+            clearTimeout(timer);
+            const query = opts.input.value.trim();
+            if (query.length < SEARCH_MIN_CHARS) {
+                seq++;   // cancel any pending response
+                lastResults = [];
+                if (query.length) message(`Type at least ${SEARCH_MIN_CHARS} characters to search`);
+                else if (opts.results) opts.results.classList.add('hidden');
+                return;
+            }
+            timer = setTimeout(() => search(query), SEARCH_DEBOUNCE_MS);
+        }
+
+        /** Selection belongs to one login/company; clear it when that changes. */
+        function resetForSession() {
+            const key = session ? session.key : null;
+            if (forKey === key) return;
+            forKey = key;
+            selected = [];
+            lastResults = [];
+            if (opts.input) opts.input.value = '';
+            if (opts.results) opts.results.classList.add('hidden');
+            sync();
+        }
+
+        if (opts.input) {
+            opts.input.addEventListener('input', onInput);
+            opts.input.addEventListener('focus', () => {
+                if (opts.input.value.trim().length >= SEARCH_MIN_CHARS && lastResults.length) renderResults(lastResults);
+            });
+            opts.input.addEventListener('blur', () => setTimeout(() => opts.results && opts.results.classList.add('hidden'), 150));
+            opts.input.addEventListener('keydown', e => {
+                if (e.key === 'Escape' && opts.results) opts.results.classList.add('hidden');
+                if (e.key === 'Enter') e.preventDefault();
+            });
+        }
+
+        return { resetForSession, getSelected: () => selected.slice() };
+    }
+
+    const envQuery = () => `environment=${encodeURIComponent(currentEnvironment)}&tenant=${encodeURIComponent(currentTenant)}`;
+
+    // Assigned To users: 'name' shown, 'id' -> AssignedTo User ID. API returns all matches.
+    const userPicker = createSearchPicker({
+        input: ui.userSearch, results: ui.userResults, chips: ui.userChips, hidden: ui.userIds, noun: 'user',
+        totalKnown: true,
+        parse: toUsers,
+        buildUrl: q => `/api/data-generate/user-search?${envQuery()}&companyId=${encodeURIComponent(session.companyId)}&query=${encodeURIComponent(q)}`
+    });
+
+    // Existing farmers: 'firstName' shown, 'id' -> Existing Farmer ID. The API is paged, so ask for
+    // one more than we show to know whether to suggest narrowing the search.
+    const farmerPicker = createSearchPicker({
+        input: ui.farmerSearch, results: ui.farmerResults, chips: ui.farmerChips, hidden: ui.existingIds, noun: 'farmer',
+        totalKnown: false,
+        parse: toFarmers,
+        buildUrl: q => `/api/data-generate/farmer-search?${envQuery()}&size=${SEARCH_MAX_RESULTS + 1}&query=${encodeURIComponent(q)}`
+    });
+
+    // Project (single select): 'name' shown, 'id' -> Project ID for Assign & Validate. LIVE/UPCOMING projects
+    // that are TO_BE_STARTED/STARTED (filters fixed in the backend route). Paged API -> ask for 51.
+    const projectPicker = createSearchPicker({
+        input: ui.projectSearch, results: ui.projectResults, chips: ui.projectChips, hidden: ui.projectId, noun: 'project',
+        totalKnown: false,
+        single: true,
+        parse: payload => toItems(payload, 'name'),
+        buildUrl: q => `/api/data-generate/project-search?${envQuery()}&size=${SEARCH_MAX_RESULTS + 1}&query=${encodeURIComponent(q)}`
+    });
+
+    /** Variety search response: crops with varieties nested in 'children' -> flat [{id, name}] (variety level). */
+    function toVarieties(payload) {
+        const crops = Array.isArray(payload) ? payload : ((payload && (payload.data || payload.content || payload.items)) || []);
+        const out = [];
+        crops.forEach(crop => (crop && Array.isArray(crop.children) ? crop.children : []).forEach(v => {
+            if (v && v.id != null) out.push({ id: String(v.id), name: String(v.name || '').trim() || `ID ${v.id}` });
+        }));
+        return out;
+    }
+
+    // Variety (single select): 'name' shown, 'id' kept; the name goes to the unchanged Crop & DOS copy,
+    // which looks it up with the same POST {search} call and maps it to the id.
+    const varietyPicker = createSearchPicker({
+        input: ui.varietySearch, results: ui.varietyResults, chips: ui.varietyChips, hidden: ui.varietyId, noun: 'variety', plural: 'varieties',
+        totalKnown: false,
+        single: true,
+        parse: toVarieties,
+        buildUrl: q => `/api/data-generate/variety-search?${envQuery()}&query=${encodeURIComponent(q)}`
+    });
+
+    function selectedVariety() {
+        const sel = varietyPicker.getSelected()[0];
+        return sel && ui.varietyId && ui.varietyId.value === sel.id ? sel : null;
+    }
+
+    function resetPickersForSession() {
+        varietyPicker.resetForSession();
+        userPicker.resetForSession();
+        farmerPicker.resetForSession();
+        projectPicker.resetForSession();
+    }
+
+    // ---------------- Soil / Irrigation type dropdowns ----------------
+    // Small lists -> plain dropdowns loaded once per login. Option value = 'id', label = 'name'.
+    // The unchanged Add Asset copy takes the name and maps it to the tenant id itself.
+
+    const ASSET_MASTERS = [
+        { type: 'soil', select: () => ui.soilType, noun: 'soil type' },
+        { type: 'irrigation', select: () => ui.irrigationType, noun: 'irrigation type' }
+    ];
+    const masterLists = { soil: [], irrigation: [] };   // [{ id, name }]
+    const masterState = {};                              // type -> { key, status: 'loading'|'ok'|'failed' }
+
+    function fillMasterSelect(select, items, placeholder) {
+        if (!select) return;
+        const previous = select.value;
+        select.innerHTML = '';
+        const first = document.createElement('option');
+        first.value = '';
+        first.textContent = placeholder;
+        select.appendChild(first);
+        items.forEach(it => {
+            const opt = document.createElement('option');
+            opt.value = it.id;
+            opt.textContent = it.name;
+            select.appendChild(opt);
+        });
+        if (items.some(it => it.id === previous)) select.value = previous;
+        else select.value = '';
+    }
+
+    /** Loads once per login. A failed list is only retried when the user clicks it (retry=true). */
+    async function loadAssetMaster(m, retry = false) {
+        const key = session ? session.key : null;
+        const state = masterState[m.type];
+        if (!key) return;
+        if (state && state.key === key && !(retry && state.status === 'failed')) return;
+        masterState[m.type] = { key, status: 'loading' };
+        fillMasterSelect(m.select(), [], `Loading ${m.noun}s...`);
+        try {
+            const res = await fetch(`/api/data-generate/asset-masters?type=${m.type}&${envQuery()}`,
+                { headers: { 'Authorization': `Bearer ${authToken}` } });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const items = toItems(await res.json(), 'name');
+            if (!session || session.key !== key) return;          // login changed meanwhile
+            masterLists[m.type] = items;
+            masterState[m.type] = { key, status: 'ok' };
+            fillMasterSelect(m.select(), items, items.length ? `Select ${m.noun}` : `No ${m.noun}s found`);
+        } catch (e) {
+            console.error(`[MasterFlow] Failed to load ${m.type} types:`, e);
+            masterLists[m.type] = [];
+            masterState[m.type] = { key, status: 'failed' };
+            fillMasterSelect(m.select(), [], `⚠ Failed to load ${m.noun}s - click to retry`);
+        }
+        updateSummary();
+    }
+
+    // explicit arrow: forEach's index argument must not be taken as 'retry'
+    function loadAssetMasters() { ASSET_MASTERS.forEach(m => loadAssetMaster(m)); }
+
+    /** Selected { id, name } of a dropdown, or null. */
+    function selectedMaster(type, select) {
+        const id = select ? select.value : '';
+        return masterLists[type].find(it => it.id === id) || null;
+    }
+
+    // Retry a failed list only when the user opens that dropdown (never automatically)
+    ASSET_MASTERS.forEach(m => {
+        const select = m.select();
+        if (!select) return;
+        select.addEventListener('mousedown', () => {
+            const st = masterState[m.type];
+            if (st && st.status === 'failed') loadAssetMaster(m, true);
+        });
+    });
+
     /** Called by script.js after a script is selected, after login, and on reset. */
     function refresh() {
         const active = isMasterSelected();
@@ -315,6 +727,7 @@
         setUploadControlsVisible(!active);
         setImportButtonForMaster(active);
         if (!active) return;
+        applySessionState();
         if (elements.templateInfo) elements.templateInfo.classList.add('hidden');
         if (elements.advancedSettingsSection) elements.advancedSettingsSection.classList.add('hidden');
         if (elements.batchSizeContainer) elements.batchSizeContainer.style.display = 'none';
@@ -322,8 +735,12 @@
         enableRun();
     }
 
+    function sessionReady() {
+        return !!(authToken && session && session.key === sessionKey() && session.companyId != null);
+    }
+
     function enableRun() {
-        if (isMasterSelected() && elements.executeBtn && authToken && !window.isExecutionActive) {
+        if (isMasterSelected() && elements.executeBtn && sessionReady() && !window.isExecutionActive) {
             elements.executeBtn.disabled = false;
             elements.executeBtn.textContent = '🚀 Run QA Data Setup';
         }
@@ -332,6 +749,7 @@
     // ---------------- Execution ----------------
 
     async function execute() {
+        if (!sessionReady()) return alert('Please log in first. User details (company) must load before creating data.');
         const f = readForm();
         const errors = validate(f);
         if (errors.length) return alert('Please fix the following:\n\n• ' + errors.join('\n• '));
@@ -362,12 +780,16 @@
             allowAdditionalAttributes: false,
             additionalAttributes: [],
             batchSize: farmersPerCall,
+            // from user-info at login (runner_bridge skips its own lookup when companyId is present)
+            companyId: session.companyId,
+            company_id: session.companyId,
             masterFlow: {
                 steps: { farmer: !f.existing, asset: f.withAssets, validate: f.validate, areaAudit: f.areaAudit, editCa: f.editCa },
                 farmerAddress: f.farmerAddress,
-                asset: { soilType: f.soilType, irrigationType: f.irrigationType, address: f.assetAddress, declaredArea: f.declaredArea },
+                asset: { soilType: f.soilType, soilTypeId: f.soilTypeId, irrigationType: f.irrigationType,
+                    irrigationTypeId: f.irrigationTypeId, address: f.assetAddress, declaredArea: f.declaredArea },
                 projectId: f.projectId,
-                editCa: { varietyName: f.varietyName, dos: f.dos }
+                editCa: { varietyName: f.varietyName, varietyId: f.varietyId, dos: f.dos }
             }
         };
 
@@ -399,7 +821,7 @@
             const out = [];
             rows.forEach(p => {
                 const base = {
-                    'User ID': p['AssignedTo User ID'], 'Farmer ID': p['Existing Farmer ID'] || '', 'Farmer Name': p['Farmer Name'],
+                    'User Name': p['AssignedTo User Name'] || '', 'Farmer Name': p['Farmer Name'], 'Farmer ID': p['Existing Farmer ID'] || '',
                     'Farmer Code': p['Farmer Code'], 'Phone Number': p['Phone Number']
                 };
                 const names = p['Asset Names'] || [];
@@ -483,7 +905,13 @@
         isMasterSelected,
         refresh,
         execute,
+        /** Logged-in user context from user-info ({ companyId, userId, userName, raw }) or null. */
+        getSession: () => (sessionReady() ? session : null),
         // exported for tests
-        _helpers: { incrementTrailingNumber, seriesValue, toScriptPhone, buildAssetNames, buildFarmerPlans, buildAssetGroups, splitList }
+        _helpers: { incrementTrailingNumber, seriesValue, toScriptPhone, buildAssetNames, buildFarmerPlans, buildAssetGroups, splitList, toUsers, toFarmers, toVarieties },
+        _getSelectedUsers: () => userPicker.getSelected(),
+        _getSelectedFarmers: () => farmerPicker.getSelected(),
+        _getSelectedProject: () => projectPicker.getSelected()[0] || null,
+        _getSelectedVariety: () => varietyPicker.getSelected()[0] || null
     };
 })();

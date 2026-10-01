@@ -1,6 +1,6 @@
 # CONFIG: isMultithreaded = False
 # CONFIG: batchSize = 5
-# EXPECTED_INPUT_COLUMNS: Farmer #, Farmer Name, Farmer Code, Phone Number, AssignedTo User ID, Existing Farmer ID, Farmer Status, Farmer Response, Asset Names
+# EXPECTED_INPUT_COLUMNS: Farmer #, Farmer Name, Farmer Code, Phone Number, AssignedTo User ID, AssignedTo User Name, Existing Farmer ID, Farmer Status, Farmer Response, Asset Names
 """
 QA Data Setup (Master)
 
@@ -98,6 +98,19 @@ def _clean_id(value):
         return text
 
 
+def _as_number(value):
+    """'5982501' -> 5982501 (numeric IDs as an Excel import would give them); other values unchanged."""
+    text = str(value).strip() if value is not None else ''
+    return int(text) if text.isdigit() else value
+
+
+def _log_inputs(step_key, rows, columns):
+    """Prints the key input values of a step so IDs are visible in the run log."""
+    for i, row in enumerate(rows, 1):
+        values = ', '.join(f"{c}={row.get(c)!r}" for c in columns)
+        print(f"[MASTER] {step_key} input {i}/{len(rows)}: {values}", flush=True)
+
+
 def run(data, token, env_config):
     flow = (env_config or {}).get('masterFlow') or {}
     steps = flow.get('steps') or {}
@@ -120,6 +133,7 @@ def run(data, token, env_config):
             'Farmer Code': plan.get('Farmer Code', ''),
             'Phone Number': plan.get('Phone Number', ''),
             'AssignedTo User ID': plan.get('AssignedTo User ID', ''),
+            'User Name': plan.get('AssignedTo User Name', ''),
             'Farmer ID': None,
             'Farmer Status': 'Not Selected',
             'Farmer Response': '',
@@ -134,6 +148,7 @@ def run(data, token, env_config):
             'AssignedTo User ID': f['AssignedTo User ID'],
             'Address': flow.get('farmerAddress', ''),
         } for f in farmers]
+        _log_inputs('farmer', farmer_rows, ['Farmer Name', 'Farmer Code', 'Phone Number', 'AssignedTo User ID'])
         for f, res in zip(farmers, _run_step('farmer', farmer_rows, token, env_config)):
             f['Farmer Status'] = 'Pass' if _is_pass(res) else 'Fail'
             f['Farmer Response'] = _message(res)
@@ -164,6 +179,7 @@ def run(data, token, env_config):
             'Farmer Code': f['Farmer Code'],
             'Phone Number': f['Phone Number'],
             'AssignedTo User ID': f['AssignedTo User ID'],
+            'User Name': f['User Name'],
             'Farmer ID': f['Farmer ID'] or '',
             'Farmer Status': f['Farmer Status'],
             '_messages': [f"Farmer: {f['Farmer Response']}"] if f['Farmer Status'] == 'Fail' and f['Farmer Response'] else [],
@@ -180,12 +196,13 @@ def run(data, token, env_config):
         todo = [r for r in records if r.get('_farmer_ok') and 'Asset Name' in r]
         asset_rows = [{
             'Asset Name': r['Asset Name'],
-            'Farmer_ID': r['Farmer ID'],
+            'Farmer_ID': _as_number(r['Farmer ID']),
             'Soil Type': asset_cfg.get('soilType', ''),
             'Irrigation Type': asset_cfg.get('irrigationType', ''),
             'Address': asset_cfg.get('address', ''),
             'Declared Area': asset_cfg.get('declaredArea', ''),
         } for r in todo]
+        _log_inputs('asset', asset_rows, ['Asset Name', 'Farmer_ID', 'Soil Type', 'Irrigation Type'])
         for r, res in zip(todo, _run_step('asset', asset_rows, token, env_config)):
             ok = _is_pass(res)
             r['Asset Status'] = 'Pass' if ok else 'Fail'
@@ -201,7 +218,9 @@ def run(data, token, env_config):
             if 'Asset Name' in r:
                 r['Validate Status'] = 'Skipped' if r.get('Asset Status') != 'Pass' else r.get('Validate Status', '')
         todo = [r for r in records if r.get('Asset Status') == 'Pass']
-        validate_rows = [{'Asset Name': r['Asset Name'], 'Asset ID': r['Asset ID'], 'Project ID': project_id} for r in todo]
+        # IDs as numbers, same as an Excel import gives the standalone script (payload becomes [5982501], not ["5982501"])
+        validate_rows = [{'Asset Name': r['Asset Name'], 'Asset ID': _as_number(r['Asset ID']), 'Project ID': _as_number(project_id)} for r in todo]
+        _log_inputs('validate', validate_rows, ['Asset Name', 'Asset ID', 'Project ID'])
         for r, res in zip(todo, _run_step('validate', validate_rows, token, env_config)):
             ca_id = _clean_id(res.get('CA ID'))
             ok = _is_pass(res) and ca_id is not None
@@ -217,7 +236,8 @@ def run(data, token, env_config):
         for r in records:
             if 'Asset Name' in r and r.get('Validate Status') != 'Pass':
                 r['Area Audit Status'] = 'Skipped'
-        audit_rows = [{'CAName': r['Asset Name'], 'CA_ID': r['CA ID']} for r in ca_records]
+        audit_rows = [{'CAName': r['Asset Name'], 'CA_ID': _as_number(r['CA ID'])} for r in ca_records]
+        _log_inputs('areaAudit', audit_rows, ['CAName', 'CA_ID'])
         for r, res in zip(ca_records, _run_step('areaAudit', audit_rows, token, env_config)):
             ok = _is_pass(res)
             r['Area Audit Status'] = 'Pass' if ok else 'Fail'
@@ -231,10 +251,11 @@ def run(data, token, env_config):
                 r['Crop/DOS Status'] = 'Skipped'
         edit_rows = [{
             'CA Name': r['Asset Name'],
-            'CA ID': r['CA ID'],
+            'CA ID': _as_number(r['CA ID']),
             'Variety Name': edit_cfg.get('varietyName', ''),
             'Date of Sowing (YYYY-MM-DD)': edit_cfg.get('dos', ''),
         } for r in ca_records]
+        _log_inputs('editCa', edit_rows, ['CA Name', 'CA ID', 'Variety Name', 'Date of Sowing (YYYY-MM-DD)'])
         for r, res in zip(ca_records, _run_step('editCa', edit_rows, token, env_config)):
             ok = _is_pass(res)
             r['Crop/DOS Status'] = 'Pass' if ok else 'Fail'
@@ -242,20 +263,20 @@ def run(data, token, env_config):
                 r['_messages'].append(f"Crop/DOS: {_message(res)}")
 
     # ---------------- FINAL OUTPUT ----------------
-    # One row per created item, laid out as User -> Farmer -> Asset -> CA, then step statuses.
+    # One row per created item, laid out as User -> Farmer -> Asset -> CA (name before id), then step statuses.
     output = []
     for r in records:
         selected = [r[c] for c in STATUS_COLUMNS if c in r and r[c] != 'Not Selected']
         all_ok = all(s in ('Pass', 'Existing') for s in selected)
         crop_ok = r.get('Crop/DOS Status') == 'Pass'
         row = {
-            'User ID': r.get('AssignedTo User ID', ''),
-            'Farmer ID': r.get('Farmer ID', ''),
+            'User Name': r.get('User Name', ''),
             'Farmer Name': r.get('Farmer Name', ''),
+            'Farmer ID': r.get('Farmer ID', ''),
             'Farmer Code': r.get('Farmer Code', ''),
             'Phone Number': r.get('Phone Number', ''),
-            'Asset ID': r.get('Asset ID', ''),
             'Asset Name': r.get('Asset Name', ''),
+            'Asset ID': r.get('Asset ID', ''),
             'CA ID': r.get('CA ID', ''),
             'Audited Area': r.get('Audited Area', ''),
             'Variety': edit_cfg.get('varietyName', '') if crop_ok else '',

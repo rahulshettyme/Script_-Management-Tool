@@ -1,0 +1,24 @@
+[
+  { "id": 1010, "name": "Cotton", "children": [
+    { "cropId": 1010, "name": "RS PR IN Cotton", "cropName": "Cotton", "id": 3590701 },
+    { "cropId": 1010, "name": "RS PR UZ Cotton", "cropName": "Cotton", "id": 5977401 } ] },
+  { "id": 1002, "name": "Maize", "children": [
+    { "cropId": 1002, "name": "RS PR Maize", "cropName": "Maize", "id": 3417101 } ] },
+  { "id": 1012, "name": "Paddy", "children": [
+    { "cropId": 1012, "name": "RS PR Germination Ton Paddy", "cropName": "Paddy", "id": 5930201 },
+    { "cropId": 1012, "name": "RS PR Sentinel Paddy", "cropName": "Paddy", "id": 5914301 } ] },
+  { "id": 1005, "name": "Potato", "children": [
+    { "cropId": 1005, "name": "RS PR IN Planet Yield Potato", "cropName": "Potato", "id": 3586701 },
+    { "cropId": 1005, "name": "RS PR LUT Argentina Potato", "cropName": "Potato", "id": 5770656 },
+    { "cropId": 1005, "name": "RS PR Potato", "cropName": "Potato", "id": 3424001 },
+    { "cropId": 1005, "name": "RS PR Potato Table", "cropName": "Potato", "id": 3480151 } ] },
+  { "id": 3417201, "name": "Spinach", "children": [
+    { "cropId": 3417201, "name": "RS PR Spinach", "cropName": "Spinach", "id": 3416952 } ] },
+  { "id": 1007, "name": "Sugracane", "children": [
+    { "cropId": 1007, "name": "RS PR Sugarcane", "cropName": "Sugracane", "id": 3416951 } ] },
+  { "id": 3417202, "name": "Sunflower", "children": [
+    { "cropId": 3417202, "name": "Copy of RS PR Sunflower-2-1740485374362", "cropName": "Sunflower", "id": 5017351 },
+    { "cropId": 3417202, "name": "RS PR Sunflower-2", "cropName": "Sunflower", "id": 3416953 } ] },
+  { "id": 5960551, "name": "Tobacco", "children": [
+    { "cropId": 5960551, "name": "RS PR Sentinel Tobacco", "cropName": "Tobacco", "id": 5960601 } ] }
+]

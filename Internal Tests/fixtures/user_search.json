@@ -1,0 +1,4 @@
+[{"id":5761751,"name":"RS Angular Test user","companyId":5761404,"email":"rsangulartestuser@cropin.test.com"},
+ {"id":5769301,"name":"RS Angular User 2","companyId":1251,"email":"rsangularuser2@cropin.test.com"},
+ {"id":5827651,"name":"RS Angular 12 User","companyId":5827551},
+ {"id":5827652,"name":"RS Angular 12 Executive User","companyId":5827551,"executiveRoleUser":true}]
